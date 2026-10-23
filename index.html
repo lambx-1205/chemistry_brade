@@ -510,7 +510,7 @@
         // 原子数に応じて線幅・二重結合の間隔・余白・ラベルサイズを段階的に下げる。
         if (atomCount === null) {
           return {
-            bondLineWidth: 1.15,
+            bondLineWidth: 1.35,
             scaleBondWidth: true,
             multipleBondOffset: 0.16,
             padding: 0.06,
@@ -525,25 +525,25 @@
         let minFontSize;
 
         if (atomCount <= 18) {
-          bondLineWidth = 1.35;
+          bondLineWidth = 1.65;
           multipleBondOffset = 0.18;
           padding = 0.07;
           maxFontSize = 22;
           minFontSize = 10;
         } else if (atomCount <= 35) {
-          bondLineWidth = 1.0;
+          bondLineWidth = 1.45;
           multipleBondOffset = 0.15;
           padding = 0.045;
           maxFontSize = 16;
           minFontSize = 8;
         } else if (atomCount <= 65) {
-          bondLineWidth = 0.78;
+          bondLineWidth = 1.25;
           multipleBondOffset = 0.12;
           padding = 0.025;
           maxFontSize = 12;
           minFontSize = 7;
         } else {
-          bondLineWidth = 0.58;
+          bondLineWidth = 1.1;
           multipleBondOffset = 0.1;
           padding = 0.015;
           maxFontSize = 10;
