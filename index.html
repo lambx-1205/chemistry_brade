@@ -134,7 +134,7 @@
       </div>
     </section>
 
-    <p class="footnote">表示された構造式はデータベースから取得した構造情報に基づきます。異性体や同名の候補が複数ある場合は、候補を確認して選んでください。</p>
+    <p class="footnote">表示された構造式はデータベースから取得した構造情報に基づきます。異性体や同名の候補が複数ある場合は、候補を確認して選んでください。よく使う日本語名は内蔵の別名辞書で英語名に読み替えて検索します。辞書にない名称は英語名またはIUPAC名で検索してください。</p>
   </main>
 
   <footer>
@@ -160,7 +160,94 @@
       const candidateButton = document.getElementById("candidate-button");
       let rdkit = null;
       let currentCandidates = [];
+      let currentMatchedTerm = "";
       let latestRequest = 0;
+
+      // PubChem の名前検索は日本語の一般名を必ずしも収録していないため、
+      // よく使う名称だけ英語名へ読み替えて再検索する。
+      function normalizeName(value) {
+        return String(value || "").normalize("NFKC").replace(/[\\s\\u3000]+/g, "").toLowerCase();
+      }
+
+      const JAPANESE_NAME_ALIASES = new Map();
+      function registerJapaneseName(englishName, aliases) {
+        aliases.forEach(function (alias) {
+          JAPANESE_NAME_ALIASES.set(normalizeName(alias), englishName);
+        });
+      }
+
+      registerJapaneseName("benzene", ["ベンゼン", "ベンゾール"]);
+      registerJapaneseName("toluene", ["トルエン", "トルオール"]);
+      registerJapaneseName("xylene", ["キシレン"]);
+      registerJapaneseName("o-xylene", ["o-キシレン", "オルトキシレン", "オルト-キシレン"]);
+      registerJapaneseName("m-xylene", ["m-キシレン", "メタキシレン", "メタ-キシレン"]);
+      registerJapaneseName("p-xylene", ["p-キシレン", "パラキシレン", "パラ-キシレン"]);
+      registerJapaneseName("ethylbenzene", ["エチルベンゼン"]);
+      registerJapaneseName("styrene", ["スチレン"]);
+      registerJapaneseName("phenol", ["フェノール"]);
+      registerJapaneseName("aniline", ["アニリン"]);
+      registerJapaneseName("naphthalene", ["ナフタレン"]);
+      registerJapaneseName("anthracene", ["アントラセン"]);
+      registerJapaneseName("phenanthrene", ["フェナントレン"]);
+      registerJapaneseName("cyclohexane", ["シクロヘキサン"]);
+      registerJapaneseName("methane", ["メタン"]);
+      registerJapaneseName("ethane", ["エタン"]);
+      registerJapaneseName("propane", ["プロパン"]);
+      registerJapaneseName("butane", ["ブタン"]);
+      registerJapaneseName("pentane", ["ペンタン"]);
+      registerJapaneseName("hexane", ["ヘキサン"]);
+      registerJapaneseName("heptane", ["ヘプタン"]);
+      registerJapaneseName("octane", ["オクタン"]);
+      registerJapaneseName("ethylene", ["エチレン", "エテン"]);
+      registerJapaneseName("propylene", ["プロピレン", "プロペン"]);
+      registerJapaneseName("acetylene", ["アセチレン", "エチン"]);
+      registerJapaneseName("methanol", ["メタノール"]);
+      registerJapaneseName("ethanol", ["エタノール", "エチルアルコール"]);
+      registerJapaneseName("isopropanol", ["イソプロパノール", "2-プロパノール", "イソプロピルアルコール"]);
+      registerJapaneseName("ethylene glycol", ["エチレングリコール"]);
+      registerJapaneseName("glycerol", ["グリセリン", "グリセロール"]);
+      registerJapaneseName("formic acid", ["ギ酸", "蟻酸"]);
+      registerJapaneseName("acetic acid", ["酢酸", "エタン酸"]);
+      registerJapaneseName("propionic acid", ["プロピオン酸"]);
+      registerJapaneseName("butyric acid", ["酪酸"]);
+      registerJapaneseName("oxalic acid", ["シュウ酸", "蓚酸"]);
+      registerJapaneseName("lactic acid", ["乳酸"]);
+      registerJapaneseName("citric acid", ["クエン酸"]);
+      registerJapaneseName("benzoic acid", ["安息香酸"]);
+      registerJapaneseName("salicylic acid", ["サリチル酸"]);
+      registerJapaneseName("acetylsalicylic acid", ["アスピリン", "アセチルサリチル酸"]);
+      registerJapaneseName("acetone", ["アセトン"]);
+      registerJapaneseName("formaldehyde", ["ホルムアルデヒド", "メタナール"]);
+      registerJapaneseName("acetaldehyde", ["アセトアルデヒド", "エタナール"]);
+      registerJapaneseName("ethyl acetate", ["酢酸エチル"]);
+      registerJapaneseName("methyl acetate", ["酢酸メチル"]);
+      registerJapaneseName("acrylic acid", ["アクリル酸"]);
+      registerJapaneseName("acrylonitrile", ["アクリロニトリル"]);
+      registerJapaneseName("acetonitrile", ["アセトニトリル"]);
+      registerJapaneseName("glucose", ["グルコース", "ブドウ糖"]);
+      registerJapaneseName("fructose", ["フルクトース", "果糖"]);
+      registerJapaneseName("sucrose", ["スクロース", "ショ糖", "蔗糖"]);
+      registerJapaneseName("lactose", ["ラクトース", "乳糖"]);
+      registerJapaneseName("maltose", ["マルトース", "麦芽糖"]);
+      registerJapaneseName("caffeine", ["カフェイン"]);
+      registerJapaneseName("theobromine", ["テオブロミン"]);
+      registerJapaneseName("urea", ["尿素"]);
+      registerJapaneseName("water", ["水"]);
+      registerJapaneseName("carbon dioxide", ["二酸化炭素"]);
+      registerJapaneseName("ammonia", ["アンモニア"]);
+      registerJapaneseName("glycine", ["グリシン"]);
+      registerJapaneseName("alanine", ["アラニン"]);
+      registerJapaneseName("valine", ["バリン"]);
+      registerJapaneseName("leucine", ["ロイシン"]);
+      registerJapaneseName("serine", ["セリン"]);
+      registerJapaneseName("cysteine", ["システイン"]);
+      registerJapaneseName("aspartic acid", ["アスパラギン酸"]);
+      registerJapaneseName("glutamic acid", ["グルタミン酸"]);
+      registerJapaneseName("lysine", ["リジン", "リシン"]);
+      registerJapaneseName("phenylalanine", ["フェニルアラニン"]);
+      registerJapaneseName("tyrosine", ["チロシン"]);
+      registerJapaneseName("tryptophan", ["トリプトファン"]);
+      registerJapaneseName("proline", ["プロリン"]);
 
       function setStatus(message, isError) {
         statusText.textContent = message;
@@ -196,7 +283,7 @@
         });
       }
 
-      function renderCompound(compound, query) {
+      function renderCompound(compound, query, matchedTerm) {
         if (!rdkit) {
           throw new Error("2D構造式の描画エンジンがまだ準備できていません。");
         }
@@ -218,7 +305,10 @@
         placeholder.hidden = true;
         structure.hidden = false;
         compoundInfo.hidden = false;
-        setStatus("構造式を表示しました。データ元：PubChem（CID " + compound.cid + "）", false);
+        const aliasNote = matchedTerm && normalizeName(matchedTerm) !== normalizeName(query)
+          ? "（日本語名を英語別名「" + matchedTerm + "」に読み替え）"
+          : "";
+        setStatus("構造式を表示しました" + aliasNote + "。データ元：PubChem（CID " + compound.cid + "）", false);
       }
 
       async function searchCompound(rawQuery) {
@@ -238,14 +328,49 @@
             throw new Error("描画エンジンを初期化中です。数秒後にもう一度お試しください。");
           }
 
-          const cidUrl = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/"
-            + encodeURIComponent(query) + "/cids/JSON";
-          const cidData = await fetchJson(cidUrl);
-          const allCids = cidData && cidData.IdentifierList && cidData.IdentifierList.CID;
-          if (!Array.isArray(allCids) || allCids.length === 0) {
-            throw new Error("PubChemに一致する分子が見つかりませんでした。英語名や別名でも検索してください。");
+          const alias = JAPANESE_NAME_ALIASES.get(normalizeName(query));
+          const searchTerms = [query];
+          if (alias && normalizeName(alias) !== normalizeName(query)) {
+            searchTerms.push(alias);
           }
 
+          let allCids = null;
+          let matchedTerm = query;
+          let lastLookupError = null;
+
+          // まず入力された名前そのものを試し、日本語名で見つからない場合だけ英語別名にフォールバック。
+          for (const term of searchTerms) {
+            try {
+              const cidUrl = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/"
+                + encodeURIComponent(term) + "/cids/JSON";
+              const cidData = await fetchJson(cidUrl);
+              const foundCids = cidData && cidData.IdentifierList && cidData.IdentifierList.CID;
+              if (Array.isArray(foundCids) && foundCids.length > 0) {
+                allCids = foundCids;
+                matchedTerm = term;
+                break;
+              }
+              lastLookupError = new Error("一致する分子が見つかりませんでした。");
+            } catch (lookupError) {
+              lastLookupError = lookupError;
+            }
+            if (requestId !== latestRequest) return;
+          }
+
+          if (!allCids) {
+            if (lastLookupError instanceof TypeError) {
+              throw lastLookupError;
+            }
+            if (/[\\u3040-\\u30ff\\u3400-\\u9fff\\uff66-\\uff9d]/.test(query)) {
+              if (alias) {
+                throw new Error("「" + query + "」と英語別名「" + alias + "」の両方でPubChemに一致する分子が見つかりませんでした。別の名称を試してください。");
+              }
+              throw new Error("この日本語名は、現時点の日本語別名辞書に登録されていません。英語名またはIUPAC名でも検索できます。");
+            }
+            throw lastLookupError || new Error("PubChemに一致する分子が見つかりませんでした。英語名や別名でも検索してください。");
+          }
+
+          currentMatchedTerm = matchedTerm;
           const cids = allCids.slice(0, 8);
           const properties = await getCompoundProperties(cids);
           if (requestId !== latestRequest) return;
@@ -255,7 +380,7 @@
 
           currentCandidates = properties;
           if (properties.length === 1) {
-            renderCompound(properties[0], query);
+            renderCompound(properties[0], query, matchedTerm);
           } else {
             candidateSelect.replaceChildren();
             properties.forEach(function (item, index) {
@@ -299,7 +424,7 @@
         const selected = currentCandidates[Number(candidateSelect.value)];
         if (!selected) return;
         try {
-          renderCompound(selected, nameInput.value.trim());
+          renderCompound(selected, nameInput.value.trim(), currentMatchedTerm);
           candidatePanel.hidden = true;
         } catch (error) {
           setStatus(error && error.message ? error.message : "構造式を描画できませんでした。", true);
