@@ -31,6 +31,7 @@
     .suggestion:hover, .suggestion.active { background: var(--pale); }
     .suggestion strong { font-weight: 700; }
     .suggestion small { display: block; margin-top: 1px; color: var(--muted); font-size: 11px; }
+    .suggestion-source { padding: 6px 12px; color: var(--muted); background: #fafcfb; font-size: 10px; border-bottom: 1px solid var(--line); }
     button { cursor: pointer; font: inherit; }
     button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #9ad6b8; outline-offset: 2px; }
     .primary { border: 1px solid var(--green); border-radius: 6px; background: var(--green); color: white; padding: 10px 16px; font-size: 14px; font-weight: 650; }
@@ -176,32 +177,8 @@
       let latestRequest = 0;
       let visibleSuggestions = [];
       let activeSuggestionIndex = -1;
-
-      // 入力途中の候補は、食品・生体分子など一般的な学習用分子に絞ったローカル辞書から即時表示。
-      // 候補選択後の構造取得は、既存の PubChem 検索処理が行う。
-      const AUTOCOMPLETE_COMPOUNDS = [
-        { english: "water", japanese: "水", aliases: [] },
-        { english: "carbon dioxide", japanese: "二酸化炭素", aliases: [] },
-        { english: "glucose", japanese: "グルコース", aliases: ["ブドウ糖"] },
-        { english: "fructose", japanese: "フルクトース", aliases: ["果糖"] },
-        { english: "sucrose", japanese: "スクロース", aliases: ["ショ糖", "蔗糖"] },
-        { english: "lactose", japanese: "ラクトース", aliases: ["乳糖"] },
-        { english: "maltose", japanese: "マルトース", aliases: ["麦芽糖"] },
-        { english: "citric acid", japanese: "クエン酸", aliases: [] },
-        { english: "lactic acid", japanese: "乳酸", aliases: [] },
-        { english: "glycine", japanese: "グリシン", aliases: [] },
-        { english: "alanine", japanese: "アラニン", aliases: [] },
-        { english: "valine", japanese: "バリン", aliases: [] },
-        { english: "leucine", japanese: "ロイシン", aliases: [] },
-        { english: "serine", japanese: "セリン", aliases: [] },
-        { english: "aspartic acid", japanese: "アスパラギン酸", aliases: [] },
-        { english: "glutamic acid", japanese: "グルタミン酸", aliases: [] },
-        { english: "lysine", japanese: "リジン", aliases: ["リシン"] },
-        { english: "phenylalanine", japanese: "フェニルアラニン", aliases: [] },
-        { english: "tyrosine", japanese: "チロシン", aliases: [] },
-        { english: "tryptophan", japanese: "トリプトファン", aliases: [] },
-        { english: "proline", japanese: "プロリン", aliases: [] }
-      ];
+      let autocompleteTimer = null;
+      let autocompleteRequestId = 0;
 
       // PubChem の名前検索は日本語の一般名を必ずしも収録していないため、
       // よく使う名称だけ英語名へ読み替えて再検索する。
@@ -313,41 +290,66 @@
         }
       }
 
-      function chooseSuggestion(compound) {
-        const query = normalizeName(nameInput.value);
-        const japaneseInput = /[ぁ-ゖァ-ヺ一-龯ｦ-ﾟ]/.test(nameInput.value);
-        const japaneseTerms = [compound.japanese].concat(compound.aliases || []);
-        const matchingJapanese = japaneseTerms.find(function (term) {
-          return normalizeName(term).startsWith(query);
+      function getLocalSuggestions(rawQuery) {
+        const query = normalizeName(rawQuery);
+        if (!query) return [];
+
+        const isJapanese = /[ぁ-ゖァ-ヺ一-龯ｦ-ﾟ]/.test(rawQuery);
+        const results = [];
+        const seen = new Set();
+
+        JAPANESE_NAME_ALIASES.forEach(function (english, alias) {
+          const aliasMatches = alias.includes(query);
+          const englishMatches = normalizeName(english).startsWith(query);
+          if (!aliasMatches && !englishMatches) return;
+
+          const term = isJapanese && aliasMatches ? alias : english;
+          const key = normalizeName(term);
+          if (seen.has(key)) return;
+          seen.add(key);
+          results.push({
+            type: "local",
+            term: term,
+            label: isJapanese && aliasMatches ? alias : english,
+            subtitle: isJapanese && aliasMatches ? english : alias,
+            source: "内蔵候補"
+          });
         });
-        const chosenTerm = japaneseInput ? (matchingJapanese || compound.japanese) : compound.english;
-        nameInput.value = chosenTerm;
-        hideSuggestions();
-        searchCompound(chosenTerm);
+        return results.slice(0, 5);
       }
 
-      function showSuggestions() {
-        const rawQuery = nameInput.value.trim();
-        const query = normalizeName(rawQuery);
-        const japaneseInput = /[ぁ-ゖァ-ヺ一-龯ｦ-ﾟ]/.test(rawQuery);
+      async function getOnlineSuggestions(rawQuery) {
+        const url = "https://pubchem.ncbi.nlm.nih.gov/rest/autocomplete/compound/"
+          + encodeURIComponent(rawQuery) + "/json?limit=8";
+        const data = await fetchJson(url);
+        const terms = data && data.dictionary_terms && data.dictionary_terms.compound;
+        if (!Array.isArray(terms)) return [];
+        return terms.filter(function (term) {
+          return typeof term === "string" && term.trim();
+        }).map(function (term) {
+          return {
+            type: "online",
+            term: term,
+            label: term,
+            subtitle: "PubChemの候補",
+            source: "PubChem"
+          };
+        });
+      }
 
-        if (!query || (query.length < 2 && !japaneseInput)) {
-          hideSuggestions();
-          return;
-        }
-
-        const results = AUTOCOMPLETE_COMPOUNDS.filter(function (compound) {
-          const searchableTerms = [compound.english, compound.japanese].concat(compound.aliases || []);
-          return searchableTerms.some(function (term) {
-            return normalizeName(term).startsWith(query);
-          });
-        }).slice(0, 7);
-
-        visibleSuggestions = results;
+      function renderSuggestions(results, showSourceLabel) {
+        visibleSuggestions = results.slice(0, 8);
         activeSuggestionIndex = -1;
         suggestionList.replaceChildren();
 
-        results.forEach(function (compound, index) {
+        if (showSourceLabel && visibleSuggestions.length) {
+          const source = document.createElement("div");
+          source.className = "suggestion-source";
+          source.textContent = "PubChemの候補と日本語別名";
+          suggestionList.appendChild(source);
+        }
+
+        visibleSuggestions.forEach(function (item, index) {
           const button = document.createElement("button");
           button.type = "button";
           button.className = "suggestion";
@@ -356,24 +358,72 @@
           button.setAttribute("aria-selected", "false");
 
           const title = document.createElement("strong");
-          title.textContent = compound.japanese;
-          const translation = document.createElement("small");
-          translation.textContent = compound.english;
+          title.textContent = item.label;
+          const subtitle = document.createElement("small");
+          subtitle.textContent = item.subtitle || item.source || "";
           button.appendChild(title);
-          button.appendChild(translation);
+          button.appendChild(subtitle);
 
           button.addEventListener("pointerdown", function (event) {
             event.preventDefault();
           });
           button.addEventListener("click", function () {
-            chooseSuggestion(compound);
+            selectSuggestion(item);
           });
           suggestionList.appendChild(button);
         });
 
-        suggestionList.hidden = results.length === 0;
-        nameInput.setAttribute("aria-expanded", String(results.length > 0));
+        const hasResults = visibleSuggestions.length > 0;
+        suggestionList.hidden = !hasResults;
+        nameInput.setAttribute("aria-expanded", String(hasResults));
         nameInput.removeAttribute("aria-activedescendant");
+      }
+
+      function selectSuggestion(item) {
+        nameInput.value = item.term;
+        hideSuggestions();
+        searchCompound(item.term);
+      }
+
+      async function showSuggestions() {
+        const rawQuery = nameInput.value.trim();
+        const query = normalizeName(rawQuery);
+        const characterCount = Array.from(query).length;
+        const requestId = ++autocompleteRequestId;
+
+        if (autocompleteTimer) {
+          clearTimeout(autocompleteTimer);
+          autocompleteTimer = null;
+        }
+
+        if (!query || characterCount < 2) {
+          hideSuggestions();
+          return;
+        }
+
+        const localResults = getLocalSuggestions(rawQuery);
+        renderSuggestions(localResults, false);
+
+        // 入力が止まってから通信する。連続入力で古い応答が候補を上書きしないようIDも照合する。
+        autocompleteTimer = setTimeout(async function () {
+          try {
+            const onlineResults = await getOnlineSuggestions(rawQuery);
+            if (requestId !== autocompleteRequestId ||
+                normalizeName(nameInput.value.trim()) !== query) return;
+
+            const combined = [];
+            const seenTerms = new Set();
+            localResults.concat(onlineResults).forEach(function (item) {
+              const key = normalizeName(item.term);
+              if (!key || seenTerms.has(key)) return;
+              seenTerms.add(key);
+              combined.push(item);
+            });
+            renderSuggestions(combined, onlineResults.length > 0);
+          } catch (error) {
+            // ネットワークが使えない場合も、内蔵候補は使える状態にしておく。
+          }
+        }, 280);
       }
 
       nameInput.addEventListener("input", showSuggestions);
