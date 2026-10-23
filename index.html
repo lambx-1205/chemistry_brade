@@ -805,140 +805,233 @@
     (() => {
       let renderer, scene, camera, controls, model, observer, frameId, canvasHost;
       const depth = 4;
-      const mat = () => new THREE.MeshStandardMaterial({
-        color: 0x26352c, roughness: 0.58, metalness: 0.04, side: THREE.DoubleSide
-      });
+      const materialCache = new Map();
+
+      function opacityValue(value, fallback) {
+        const n = Number.parseFloat(value);
+        return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : fallback;
+      }
+
+      function materialFor(paint, opacity) {
+        const paintText = String(paint || "").trim();
+        const safePaint = !paintText || /^url\(/i.test(paintText) || paintText === "currentColor"
+          ? "#26352c"
+          : paintText;
+        const alpha = Math.max(0, Math.min(1, opacity));
+        const key = safePaint + "|" + alpha;
+        if (materialCache.has(key)) return materialCache.get(key);
+
+        let color;
+        try {
+          color = new THREE.Color(safePaint);
+        } catch (_error) {
+          color = new THREE.Color("#26352c");
+        }
+        const material = new THREE.MeshStandardMaterial({
+          color: color,
+          roughness: 0.58,
+          metalness: 0.04,
+          side: THREE.DoubleSide,
+          transparent: alpha < 1,
+          opacity: alpha,
+          depthWrite: alpha >= 1
+        });
+        materialCache.set(key, material);
+        return material;
+      }
+
+      function isPainted(paint) {
+        const value = String(paint || "").trim().toLowerCase();
+        return value !== "" && value !== "none" && value !== "transparent" &&
+          value !== "rgba(0, 0, 0, 0)";
+      }
 
       function extrude(shape, material) {
         return new THREE.Mesh(new THREE.ExtrudeGeometry(shape, {
-          depth, bevelEnabled: true, bevelSegments: 1, steps: 1,
-          bevelSize: 0.1, bevelThickness: 0.1, curveSegments: 6
+          depth: depth,
+          bevelEnabled: false,
+          steps: 1,
+          curveSegments: 8
         }), material);
       }
 
+      function addFilledPath(group, path, material, width, height) {
+        SVGLoader.createShapes(path).forEach(shape => {
+          const mesh = extrude(shape, material);
+          // SVGは左上が原点なので、Y軸を反転して中央に配置する。
+          mesh.geometry.scale(1, -1, 1);
+          mesh.geometry.translate(-width / 2, height / 2, 0);
+          group.add(mesh);
+        });
+      }
+
       function addStrokeSegment(group, a, b, radius, material) {
-        const dx = b.x-a.x, dy = b.y-a.y, len = Math.hypot(dx,dy);
-        if (len < 0.05) return;
-        const nx = -dy/len*radius, ny = dx/len*radius;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const len = Math.hypot(dx, dy);
+        if (len < 0.02 || radius <= 0) return;
+        const nx = -dy / len * radius;
+        const ny = dx / len * radius;
         const shape = new THREE.Shape();
-        shape.moveTo(a.x+nx,a.y+ny); shape.lineTo(b.x+nx,b.y+ny);
-        shape.lineTo(b.x-nx,b.y-ny); shape.lineTo(a.x-nx,a.y-ny); shape.closePath();
+        shape.moveTo(a.x + nx, a.y + ny);
+        shape.lineTo(b.x + nx, b.y + ny);
+        shape.lineTo(b.x - nx, b.y - ny);
+        shape.lineTo(a.x - nx, a.y - ny);
+        shape.closePath();
         group.add(extrude(shape, material));
       }
 
-      function addJoin(group, p, radius, material) {
+      function addRoundJoin(group, point, radius, material) {
         const shape = new THREE.Shape();
-        shape.absarc(p.x,p.y,radius,0,Math.PI*2,false);
-        group.add(extrude(shape,material));
+        shape.absarc(point.x, point.y, radius, 0, Math.PI * 2, false);
+        group.add(extrude(shape, material));
       }
 
-      function addLabels(svg, group, width, height) {
-        svg.querySelectorAll("text").forEach(node => {
-          const text = (node.textContent || "").trim();
-          const x = Number(node.getAttribute("x")), y = Number(node.getAttribute("y"));
-          if (!text || !Number.isFinite(x) || !Number.isFinite(y)) return;
-          const style = node.getAttribute("style") || "";
-          const fill = node.getAttribute("fill") || ((style.match(/fill:\s*([^;]+)/)||[])[1]) || "#26352c";
-          const fs = parseFloat(node.getAttribute("font-size")) ||
-            parseFloat((style.match(/font-size:\s*([\d.]+)/)||[])[1]) || 12;
-          const cnv = document.createElement("canvas"); cnv.width=256; cnv.height=128;
-          const ctx = cnv.getContext("2d");
-          ctx.clearRect(0,0,256,128); ctx.fillStyle=fill; ctx.textAlign="center"; ctx.textBaseline="middle";
-          ctx.font="600 64px Arial, sans-serif"; ctx.fillText(text,128,64);
-          const labelWidth=Math.max(1,ctx.measureText(text).width/64*fs);
-          const texture=new THREE.CanvasTexture(cnv); texture.colorSpace=THREE.SRGBColorSpace;
-          const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,transparent:true,depthWrite:false}));
-          sprite.scale.set(labelWidth,fs*1.55,1);
-          sprite.position.set(x+labelWidth/2-width/2,height/2-y+fs*0.3,depth+0.12);
-          group.add(sprite);
+      function addStrokePath(group, path, style, width, height) {
+        const rawWidth = Number.parseFloat(style.strokeWidth);
+        const strokeWidth = Number.isFinite(rawWidth) && rawWidth > 0 ? rawWidth : 1;
+        const radius = strokeWidth / 2;
+        const opacity = opacityValue(style.opacity, 1) *
+          opacityValue(style.strokeOpacity, 1);
+        const material = materialFor(style.stroke, opacity);
+
+        path.subPaths.forEach(subPath => {
+          const points = subPath.getPoints(8).map(point => new THREE.Vector2(
+            point.x - width / 2,
+            height / 2 - point.y
+          ));
+          if (points.length < 2) return;
+          for (let i = 0; i < points.length - 1; i++) {
+            addStrokeSegment(group, points[i], points[i + 1], radius, material);
+          }
+          // 線の継ぎ目や端に穴ができないよう、線の上だけを丸く接続する。
+          points.forEach(point => addRoundJoin(group, point, radius, material));
         });
       }
 
       function build(svg) {
         const parsed = new SVGLoader().parse(new XMLSerializer().serializeToString(svg));
-        const vb=(svg.getAttribute("viewBox")||"").trim().split(/[\s,]+/).map(Number);
-        const w=vb.length===4&&vb.every(Number.isFinite)?vb[2]:(parseFloat(svg.getAttribute("width"))||300);
-        const h=vb.length===4&&vb.every(Number.isFinite)?vb[3]:(parseFloat(svg.getAttribute("height"))||200);
-        const group=new THREE.Group(), material=mat();
+        const viewBox = (svg.getAttribute("viewBox") || "")
+          .trim().split(/[\s,]+/).map(Number);
+        const width = viewBox.length === 4 && viewBox.every(Number.isFinite)
+          ? viewBox[2] : (Number.parseFloat(svg.getAttribute("width")) || 300);
+        const height = viewBox.length === 4 && viewBox.every(Number.isFinite)
+          ? viewBox[3] : (Number.parseFloat(svg.getAttribute("height")) || 200);
+        const group = new THREE.Group();
 
         parsed.paths.forEach(path => {
-          const style=path.userData && path.userData.style ? path.userData.style : {};
-          if(style.fill && style.fill!=="none" && style.fill!=="transparent") {
-            SVGLoader.createShapes(path).forEach(shape => {
-              const mesh=extrude(shape,material);
-              mesh.geometry.scale(1,-1,1);
-              mesh.geometry.translate(-w/2,h/2,0);
-              group.add(mesh);
-            });
+          const style = path.userData && path.userData.style ? path.userData.style : {};
+          const fill = style.fill;
+          const stroke = style.stroke;
+          const opacity = opacityValue(style.opacity, 1);
+
+          // 色が塗られているパスの実形状だけを押し出す。背景や空白領域は生成しない。
+          if (isPainted(fill)) {
+            const fillOpacity = opacity * opacityValue(style.fillOpacity, 1);
+            addFilledPath(group, path, materialFor(fill, fillOpacity), width, height);
           }
-          if(style.stroke && style.stroke!=="none" && style.stroke!=="transparent") {
-            const radius=Math.max(0.55,(parseFloat(style.strokeWidth)||1.5)/2);
-            path.subPaths.forEach(subPath => {
-              const points=subPath.getPoints(8).map(p=>new THREE.Vector2(p.x-w/2,h/2-p.y));
-              for(let i=0;i<points.length-1;i++) addStrokeSegment(group,points[i],points[i+1],radius,material);
-              if(points.length>1) points.forEach(p=>addJoin(group,p,radius,material));
-            });
+
+          // 結合線などのストロークは、線幅ぶんの細い領域に変換して押し出す。
+          if (isPainted(stroke)) {
+            addStrokePath(group, path, style, width, height);
           }
         });
-        addLabels(svg,group,w,h);
-        group.scale.setScalar(100/Math.max(w,h));
+
+        // RDKitの原子ラベルは塗りつぶしパスとして含まれるため、平面テキストを重ねない。
+        group.scale.setScalar(100 / Math.max(width, height));
         return group;
       }
 
       function dispose() {
-        if(frameId) cancelAnimationFrame(frameId);
-        frameId=0;
-        if(observer) observer.disconnect();
-        observer=null;
-        if(controls) controls.dispose();
-        controls=null;
-        if(renderer) {
+        if (frameId) cancelAnimationFrame(frameId);
+        frameId = 0;
+        if (observer) observer.disconnect();
+        observer = null;
+        if (controls) controls.dispose();
+        controls = null;
+
+        if (renderer) {
           renderer.dispose();
-          if(renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+          if (renderer.domElement.parentNode) {
+            renderer.domElement.parentNode.removeChild(renderer.domElement);
+          }
         }
-        renderer=null; scene=null; camera=null; canvasHost=null;
-        if(model) {
-          model.traverse(obj=>{
-            if(obj.geometry) obj.geometry.dispose();
-            if(obj.material) (Array.isArray(obj.material)?obj.material:[obj.material]).forEach(m=>{
-              if(m.map) m.map.dispose(); m.dispose();
-            });
+        renderer = null;
+        scene = null;
+        camera = null;
+        canvasHost = null;
+
+        if (model) {
+          const geometries = new Set();
+          model.traverse(object => {
+            if (object.geometry) geometries.add(object.geometry);
           });
-          model=null;
+          geometries.forEach(geometry => geometry.dispose());
+          model = null;
         }
+        materialCache.forEach(material => material.dispose());
+        materialCache.clear();
       }
 
       async function show(svg, host) {
         dispose();
-        canvasHost=host;
-        scene=new THREE.Scene(); scene.background=new THREE.Color(0xf7f9f7);
-        const width=Math.max(host.clientWidth,320), height=Math.max(host.clientHeight,280);
-        camera=new THREE.PerspectiveCamera(38,width/height,0.1,1000);
-        renderer=new THREE.WebGLRenderer({antialias:true});
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
-        renderer.setSize(width,height); renderer.outputColorSpace=THREE.SRGBColorSpace;
+        canvasHost = host;
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xf7f9f7);
+        const width = Math.max(host.clientWidth, 320);
+        const height = Math.max(host.clientHeight, 280);
+        camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 1000);
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.setSize(width, height);
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
         host.replaceChildren(renderer.domElement);
-        renderer.domElement.style.cssText="display:block;width:100%;height:100%";
-        scene.add(new THREE.AmbientLight(0xffffff,1.6));
-        const key=new THREE.DirectionalLight(0xffffff,2); key.position.set(-60,90,120); scene.add(key);
-        const fill=new THREE.DirectionalLight(0xffffff,0.8); fill.position.set(70,-40,40); scene.add(fill);
-        model=build(svg); scene.add(model);
-        const bounds=new THREE.Box3().setFromObject(model), size=bounds.getSize(new THREE.Vector3());
-        const maxDim=Math.max(size.x,size.y,size.z,1);
-        camera.position.set(0,0,maxDim*2.3); camera.near=Math.max(0.1,maxDim/100); camera.far=maxDim*20; camera.updateProjectionMatrix();
-        controls=new OrbitControls(camera,renderer.domElement);
-        controls.enableDamping=true; controls.dampingFactor=0.08; controls.target.set(0,0,0); controls.update();
-        observer=new ResizeObserver(()=>{
-          if(!renderer||!camera||!canvasHost)return;
-          const w=Math.max(canvasHost.clientWidth,1),h=Math.max(canvasHost.clientHeight,1);
-          renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix();
+        renderer.domElement.style.cssText = "display:block;width:100%;height:100%";
+
+        scene.add(new THREE.AmbientLight(0xffffff, 1.6));
+        const key = new THREE.DirectionalLight(0xffffff, 2);
+        key.position.set(-60, 90, 120);
+        scene.add(key);
+        const fill = new THREE.DirectionalLight(0xffffff, 0.8);
+        fill.position.set(70, -40, 40);
+        scene.add(fill);
+
+        model = build(svg);
+        scene.add(model);
+        const bounds = new THREE.Box3().setFromObject(model);
+        const size = bounds.getSize(new THREE.Vector3());
+        const maxDimension = Math.max(size.x, size.y, size.z, 1);
+        camera.position.set(0, 0, maxDimension * 2.3);
+        camera.near = Math.max(0.1, maxDimension / 100);
+        camera.far = maxDimension * 20;
+        camera.updateProjectionMatrix();
+
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+        controls.target.set(0, 0, 0);
+        controls.update();
+
+        observer = new ResizeObserver(() => {
+          if (!renderer || !camera || !canvasHost) return;
+          const w = Math.max(canvasHost.clientWidth, 1);
+          const h = Math.max(canvasHost.clientHeight, 1);
+          renderer.setSize(w, h);
+          camera.aspect = w / h;
+          camera.updateProjectionMatrix();
         });
         observer.observe(host);
-        const animate=()=>{frameId=requestAnimationFrame(animate);if(controls)controls.update();if(renderer&&scene&&camera)renderer.render(scene,camera);};
+
+        const animate = () => {
+          frameId = requestAnimationFrame(animate);
+          if (controls) controls.update();
+          if (renderer && scene && camera) renderer.render(scene, camera);
+        };
         animate();
       }
-      window.Chemistry3DPreview={show,dispose};
+
+      window.Chemistry3DPreview = { show, dispose };
     })();
-  </script>
+  
 </body>
 </html>
