@@ -90,6 +90,9 @@
       .footer-inner { padding: 12px 0; align-items: flex-start; flex-direction: column; justify-content: center; }
     }
   </style>
+  <script type="importmap">
+    {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js"}}
+  </script>
   <script src="https://unpkg.com/@rdkit/rdkit/dist/RDKit_minimal.js"></script>
 </head>
 <body>
@@ -791,6 +794,150 @@
       }).catch(function () {
         setStatus("RDKit.jsの初期化に失敗しました。CDNへの接続を確認してください。", true);
       });
+    })();
+  </script>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { SVGLoader } from "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/loaders/SVGLoader.js";
+    import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/controls/OrbitControls.js";
+
+    (() => {
+      let renderer, scene, camera, controls, model, observer, frameId, canvasHost;
+      const depth = 4;
+      const mat = () => new THREE.MeshStandardMaterial({
+        color: 0x26352c, roughness: 0.58, metalness: 0.04, side: THREE.DoubleSide
+      });
+
+      function extrude(shape, material) {
+        return new THREE.Mesh(new THREE.ExtrudeGeometry(shape, {
+          depth, bevelEnabled: true, bevelSegments: 1, steps: 1,
+          bevelSize: 0.1, bevelThickness: 0.1, curveSegments: 6
+        }), material);
+      }
+
+      function addStrokeSegment(group, a, b, radius, material) {
+        const dx = b.x-a.x, dy = b.y-a.y, len = Math.hypot(dx,dy);
+        if (len < 0.05) return;
+        const nx = -dy/len*radius, ny = dx/len*radius;
+        const shape = new THREE.Shape();
+        shape.moveTo(a.x+nx,a.y+ny); shape.lineTo(b.x+nx,b.y+ny);
+        shape.lineTo(b.x-nx,b.y-ny); shape.lineTo(a.x-nx,a.y-ny); shape.closePath();
+        group.add(extrude(shape, material));
+      }
+
+      function addJoin(group, p, radius, material) {
+        const shape = new THREE.Shape();
+        shape.absarc(p.x,p.y,radius,0,Math.PI*2,false);
+        group.add(extrude(shape,material));
+      }
+
+      function addLabels(svg, group, width, height) {
+        svg.querySelectorAll("text").forEach(node => {
+          const text = (node.textContent || "").trim();
+          const x = Number(node.getAttribute("x")), y = Number(node.getAttribute("y"));
+          if (!text || !Number.isFinite(x) || !Number.isFinite(y)) return;
+          const style = node.getAttribute("style") || "";
+          const fill = node.getAttribute("fill") || ((style.match(/fill:\s*([^;]+)/)||[])[1]) || "#26352c";
+          const fs = parseFloat(node.getAttribute("font-size")) ||
+            parseFloat((style.match(/font-size:\s*([\d.]+)/)||[])[1]) || 12;
+          const cnv = document.createElement("canvas"); cnv.width=256; cnv.height=128;
+          const ctx = cnv.getContext("2d");
+          ctx.clearRect(0,0,256,128); ctx.fillStyle=fill; ctx.textAlign="center"; ctx.textBaseline="middle";
+          ctx.font="600 64px Arial, sans-serif"; ctx.fillText(text,128,64);
+          const labelWidth=Math.max(1,ctx.measureText(text).width/64*fs);
+          const texture=new THREE.CanvasTexture(cnv); texture.colorSpace=THREE.SRGBColorSpace;
+          const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,transparent:true,depthWrite:false}));
+          sprite.scale.set(labelWidth,fs*1.55,1);
+          sprite.position.set(x+labelWidth/2-width/2,height/2-y+fs*0.3,depth+0.12);
+          group.add(sprite);
+        });
+      }
+
+      function build(svg) {
+        const parsed = new SVGLoader().parse(new XMLSerializer().serializeToString(svg));
+        const vb=(svg.getAttribute("viewBox")||"").trim().split(/[\s,]+/).map(Number);
+        const w=vb.length===4&&vb.every(Number.isFinite)?vb[2]:(parseFloat(svg.getAttribute("width"))||300);
+        const h=vb.length===4&&vb.every(Number.isFinite)?vb[3]:(parseFloat(svg.getAttribute("height"))||200);
+        const group=new THREE.Group(), material=mat();
+
+        parsed.paths.forEach(path => {
+          const style=path.userData && path.userData.style ? path.userData.style : {};
+          if(style.fill && style.fill!=="none" && style.fill!=="transparent") {
+            SVGLoader.createShapes(path).forEach(shape => {
+              const mesh=extrude(shape,material);
+              mesh.geometry.scale(1,-1,1);
+              mesh.geometry.translate(-w/2,h/2,0);
+              group.add(mesh);
+            });
+          }
+          if(style.stroke && style.stroke!=="none" && style.stroke!=="transparent") {
+            const radius=Math.max(0.55,(parseFloat(style.strokeWidth)||1.5)/2);
+            path.subPaths.forEach(subPath => {
+              const points=subPath.getPoints(8).map(p=>new THREE.Vector2(p.x-w/2,h/2-p.y));
+              for(let i=0;i<points.length-1;i++) addStrokeSegment(group,points[i],points[i+1],radius,material);
+              if(points.length>1) points.forEach(p=>addJoin(group,p,radius,material));
+            });
+          }
+        });
+        addLabels(svg,group,w,h);
+        group.scale.setScalar(100/Math.max(w,h));
+        return group;
+      }
+
+      function dispose() {
+        if(frameId) cancelAnimationFrame(frameId);
+        frameId=0;
+        if(observer) observer.disconnect();
+        observer=null;
+        if(controls) controls.dispose();
+        controls=null;
+        if(renderer) {
+          renderer.dispose();
+          if(renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+        }
+        renderer=null; scene=null; camera=null; canvasHost=null;
+        if(model) {
+          model.traverse(obj=>{
+            if(obj.geometry) obj.geometry.dispose();
+            if(obj.material) (Array.isArray(obj.material)?obj.material:[obj.material]).forEach(m=>{
+              if(m.map) m.map.dispose(); m.dispose();
+            });
+          });
+          model=null;
+        }
+      }
+
+      async function show(svg, host) {
+        dispose();
+        canvasHost=host;
+        scene=new THREE.Scene(); scene.background=new THREE.Color(0xf7f9f7);
+        const width=Math.max(host.clientWidth,320), height=Math.max(host.clientHeight,280);
+        camera=new THREE.PerspectiveCamera(38,width/height,0.1,1000);
+        renderer=new THREE.WebGLRenderer({antialias:true});
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+        renderer.setSize(width,height); renderer.outputColorSpace=THREE.SRGBColorSpace;
+        host.replaceChildren(renderer.domElement);
+        renderer.domElement.style.cssText="display:block;width:100%;height:100%";
+        scene.add(new THREE.AmbientLight(0xffffff,1.6));
+        const key=new THREE.DirectionalLight(0xffffff,2); key.position.set(-60,90,120); scene.add(key);
+        const fill=new THREE.DirectionalLight(0xffffff,0.8); fill.position.set(70,-40,40); scene.add(fill);
+        model=build(svg); scene.add(model);
+        const bounds=new THREE.Box3().setFromObject(model), size=bounds.getSize(new THREE.Vector3());
+        const maxDim=Math.max(size.x,size.y,size.z,1);
+        camera.position.set(0,0,maxDim*2.3); camera.near=Math.max(0.1,maxDim/100); camera.far=maxDim*20; camera.updateProjectionMatrix();
+        controls=new OrbitControls(camera,renderer.domElement);
+        controls.enableDamping=true; controls.dampingFactor=0.08; controls.target.set(0,0,0); controls.update();
+        observer=new ResizeObserver(()=>{
+          if(!renderer||!camera||!canvasHost)return;
+          const w=Math.max(canvasHost.clientWidth,1),h=Math.max(canvasHost.clientHeight,1);
+          renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix();
+        });
+        observer.observe(host);
+        const animate=()=>{frameId=requestAnimationFrame(animate);if(controls)controls.update();if(renderer&&scene&&camera)renderer.render(scene,camera);};
+        animate();
+      }
+      window.Chemistry3DPreview={show,dispose};
     })();
   </script>
 </body>
