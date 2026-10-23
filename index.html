@@ -804,7 +804,7 @@
 
     (() => {
       let renderer, scene, camera, controls, model, observer, frameId, canvasHost;
-      const depth = 4;
+      let depth = 4;
       const materialCache = new Map();
 
       function opacityValue(value, fallback) {
@@ -840,19 +840,75 @@
         return material;
       }
 
-      function isPainted(paint) {
+      function paintComponents(paint) {
         const value = String(paint || "").trim().toLowerCase();
-        return value !== "" && value !== "none" && value !== "transparent" &&
-          value !== "rgba(0, 0, 0, 0)";
+        const hex = value.match(/^#([0-9a-f]{3,8})$/i);
+        if (hex) {
+          let digits = hex[1];
+          if (digits.length === 3 || digits.length === 4) {
+            digits = digits.split("").map(ch => ch + ch).join("");
+          }
+          if (digits.length === 6 || digits.length === 8) {
+            return {
+              r: parseInt(digits.slice(0, 2), 16) / 255,
+              g: parseInt(digits.slice(2, 4), 16) / 255,
+              b: parseInt(digits.slice(4, 6), 16) / 255,
+              a: digits.length === 8 ? parseInt(digits.slice(6, 8), 16) / 255 : 1
+            };
+          }
+        }
+
+        const rgb = value.match(/^rgba?\(([^)]+)\)$/);
+        if (rgb) {
+          const parts = rgb[1].replace(/\//g, ",").split(/[\s,]+/).filter(Boolean);
+          if (parts.length >= 3) {
+            const channel = part => {
+              const number = Number.parseFloat(part);
+              return Number.isFinite(number) ? (String(part).includes("%") ? number / 100 : number / 255) : 0;
+            };
+            let alpha = 1;
+            if (parts.length >= 4) {
+              const number = Number.parseFloat(parts[3]);
+              alpha = Number.isFinite(number)
+                ? (String(parts[3]).includes("%") ? number / 100 : number)
+                : 1;
+            }
+            return { r: channel(parts[0]), g: channel(parts[1]), b: channel(parts[2]), a: alpha };
+          }
+        }
+        return null;
+      }
+
+      function isTransparentPaint(paint) {
+        const value = String(paint || "").trim().toLowerCase();
+        if (!value || value === "none" || value === "transparent") return true;
+        const components = paintComponents(value);
+        return Boolean(components && components.a <= 0);
+      }
+
+      function isWhitePaint(paint) {
+        const value = String(paint || "").trim().toLowerCase();
+        if (value === "white") return true;
+        const components = paintComponents(value);
+        // 白色またはほぼ白色のパスは背景・空白として扱い、3Dメッシュを作らない。
+        return Boolean(components && components.a > 0 &&
+          components.r >= 0.985 && components.g >= 0.985 && components.b >= 0.985);
+      }
+
+      function isPainted(paint) {
+        return !isTransparentPaint(paint) && !isWhitePaint(paint);
       }
 
       function extrude(shape, material) {
-        return new THREE.Mesh(new THREE.ExtrudeGeometry(shape, {
+        const geometry = new THREE.ExtrudeGeometry(shape, {
           depth: depth,
           bevelEnabled: false,
           steps: 1,
           curveSegments: 8
-        }), material);
+        });
+        // 厚みを前後へ均等に配分し、回転軸をモデルの中央に合わせる。
+        geometry.translate(0, 0, -depth / 2);
+        return new THREE.Mesh(geometry, material);
       }
 
       function addFilledPath(group, path, material, width, height) {
@@ -893,6 +949,7 @@
         const radius = strokeWidth / 2;
         const opacity = opacityValue(style.opacity, 1) *
           opacityValue(style.strokeOpacity, 1);
+        if (opacity <= 0) return;
         const material = materialFor(style.stroke, opacity);
 
         path.subPaths.forEach(subPath => {
@@ -917,6 +974,8 @@
           ? viewBox[2] : (Number.parseFloat(svg.getAttribute("width")) || 300);
         const height = viewBox.length === 4 && viewBox.every(Number.isFinite)
           ? viewBox[3] : (Number.parseFloat(svg.getAttribute("height")) || 200);
+        // モデルの最大寸法に対して約4.5%の厚みにし、分子サイズによって厚みが極端に変わらないようにする。
+        depth = Math.max(width, height) * 0.045;
         const group = new THREE.Group();
 
         parsed.paths.forEach(path => {
@@ -928,7 +987,9 @@
           // 色が塗られているパスの実形状だけを押し出す。背景や空白領域は生成しない。
           if (isPainted(fill)) {
             const fillOpacity = opacity * opacityValue(style.fillOpacity, 1);
-            addFilledPath(group, path, materialFor(fill, fillOpacity), width, height);
+            if (fillOpacity > 0) {
+              addFilledPath(group, path, materialFor(fill, fillOpacity), width, height);
+            }
           }
 
           // 結合線などのストロークは、線幅ぶんの細い領域に変換して押し出す。
