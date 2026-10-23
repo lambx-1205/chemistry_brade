@@ -50,9 +50,13 @@
     .structure { padding: 12px 20px; min-height: 260px; display: flex; align-items: center; justify-content: center; }
     .structure svg { display: block; width: 100%; max-width: 640px; height: auto; }
     .structure svg text { font-family: Arial, sans-serif; }
-    .preview-toolbar { display: flex; justify-content: flex-end; padding: 0 20px 14px; }
-    .preview-panel { margin: 0 20px 18px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #f7f9f7; }
-    .preview-panel[hidden] { display: none !important; }
+    .preview-toolbar { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 0 20px 14px; }
+    .preview-panel, .spinner-panel { margin: 0 20px 18px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #f7f9f7; }
+    .preview-panel[hidden], .spinner-panel[hidden] { display: none !important; }
+    .spinner-actions { display: flex; align-items: center; gap: 8px; }
+    #spinner-canvas { width: 100%; height: 560px; display: block; touch-action: pan-y; }
+    .spin-button { border: 1px solid var(--green); border-radius: 6px; background: var(--green); color: #fff; padding: 6px 12px; font-size: 12px; font-weight: 650; }
+    .spin-button:disabled { opacity: .6; cursor: wait; }
     .preview-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; background: #fff; border-bottom: 1px solid var(--line); }
     .preview-head strong { font-size: 13px; }
     .secondary { border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); padding: 6px 10px; font-size: 12px; }
@@ -85,7 +89,10 @@
       .result-head { align-items: flex-start; flex-direction: column; gap: 2px; }
       .structure { padding: 10px; }
       #preview-canvas { height: 320px; }
-      .preview-panel { margin-left: 10px; margin-right: 10px; }
+      #spinner-canvas { height: 420px; }
+      .preview-panel, .spinner-panel { margin-left: 10px; margin-right: 10px; }
+      .preview-toolbar { padding-left: 10px; padding-right: 10px; }
+      .spinner-actions { gap: 5px; }
       dl { grid-template-columns: 82px minmax(0, 1fr); }
       .footer-inner { padding: 12px 0; align-items: flex-start; flex-direction: column; justify-content: center; }
     }
@@ -146,11 +153,23 @@
       <div class="structure" id="structure" hidden></div>
       <div class="preview-toolbar" id="preview-toolbar" hidden>
         <button class="primary" id="preview-button" type="button">プレビュー</button>
+        <button class="primary" id="generate-top-button" type="button">コマとして生成</button>
       </div>
       <section class="preview-panel" id="preview-panel" aria-label="3Dプレビュー" hidden>
         <div class="preview-head"><strong>3Dプレビュー</strong><button class="secondary" id="preview-close" type="button">閉じる</button></div>
         <div id="preview-canvas" role="img" aria-label="回転して確認できる3D構造式"></div>
         <p class="preview-note">ドラッグで回転、スクロールで拡大・縮小できます。現段階では見た目のプレビューで、物理演算はまだ行いません。</p>
+      </section>
+      <section class="spinner-panel" id="spinner-panel" aria-label="コマの生成空間" hidden>
+        <div class="preview-head">
+          <strong>コマの生成空間</strong>
+          <div class="spinner-actions">
+            <button class="spin-button" id="spin-button" type="button">回す</button>
+            <button class="secondary" id="spinner-close" type="button">閉じる</button>
+          </div>
+        </div>
+        <div id="spinner-canvas" role="img" aria-label="広い床の上に配置された構造式のコマ"></div>
+        <p class="preview-note">中央の軸は構造式の重心を通ります。「回す」で一定角度だけ回転します。床との接触や摩擦を含む物理演算はまだ未実装です。ドラッグで視点を変えられます。</p>
       </section>
       <div class="compound-info" id="compound-info" hidden>
         <h3 id="compound-heading"></h3>
@@ -194,6 +213,11 @@
       const previewPanel = document.getElementById("preview-panel");
       const previewClose = document.getElementById("preview-close");
       const previewCanvas = document.getElementById("preview-canvas");
+      const generateTopButton = document.getElementById("generate-top-button");
+      const spinnerPanel = document.getElementById("spinner-panel");
+      const spinnerCanvas = document.getElementById("spinner-canvas");
+      const spinButton = document.getElementById("spin-button");
+      const spinnerClose = document.getElementById("spinner-close");
       const candidatePanel = document.getElementById("candidate-panel");
       const candidateSelect = document.getElementById("candidate-select");
       const candidateButton = document.getElementById("candidate-button");
@@ -612,6 +636,7 @@
         structure.hidden = false;
         previewToolbar.hidden = false;
         previewPanel.hidden = true;
+        spinnerPanel.hidden = true;
         if (window.Chemistry3DPreview) window.Chemistry3DPreview.dispose();
         compoundInfo.hidden = false;
         const aliasNote = matchedTerm && normalizeName(matchedTerm) !== normalizeName(query)
@@ -733,6 +758,7 @@
           setStatus("先に2D構造式を表示してください。", true);
           return;
         }
+        spinnerPanel.hidden = true;
         previewPanel.hidden = false;
         previewButton.disabled = true;
         previewButton.textContent = "生成中…";
@@ -750,6 +776,48 @@
       });
       previewClose.addEventListener("click", function () {
         previewPanel.hidden = true;
+        if (window.Chemistry3DPreview) window.Chemistry3DPreview.dispose();
+      });
+
+      generateTopButton.addEventListener("click", async function () {
+        const svg = structure.querySelector("svg");
+        if (!svg) {
+          setStatus("先に2D構造式を表示してください。", true);
+          return;
+        }
+        previewPanel.hidden = true;
+        spinnerPanel.hidden = false;
+        generateTopButton.disabled = true;
+        generateTopButton.textContent = "生成中…";
+        try {
+          if (!window.Chemistry3DPreview) {
+            throw new Error("3D描画エンジンを読み込み中です。数秒待ってからもう一度お試しください。");
+          }
+          await window.Chemistry3DPreview.showSpinner(svg, spinnerCanvas);
+          setStatus("コマを生成しました。中央の軸を中心に回転できます。", false);
+        } catch (error) {
+          spinnerPanel.hidden = true;
+          setStatus(error && error.message ? error.message : "コマを生成できませんでした。", true);
+        } finally {
+          generateTopButton.disabled = false;
+          generateTopButton.textContent = "コマとして生成";
+        }
+      });
+
+      spinButton.addEventListener("click", async function () {
+        if (!window.Chemistry3DPreview) return;
+        spinButton.disabled = true;
+        spinButton.textContent = "回転中…";
+        try {
+          await window.Chemistry3DPreview.spin();
+        } finally {
+          spinButton.disabled = false;
+          spinButton.textContent = "回す";
+        }
+      });
+
+      spinnerClose.addEventListener("click", function () {
+        spinnerPanel.hidden = true;
         if (window.Chemistry3DPreview) window.Chemistry3DPreview.dispose();
       });
 
@@ -805,6 +873,8 @@
     (() => {
       let renderer, scene, camera, controls, model, observer, frameId, canvasHost;
       let depth = 4;
+      let spinAnimation = null;
+      let spinResolve = null;
       const materialCache = new Map();
 
       function opacityValue(value, fallback) {
@@ -1113,6 +1183,12 @@
         observer = null;
         if (controls) controls.dispose();
         controls = null;
+        if (spinResolve) {
+          const resolve = spinResolve;
+          spinResolve = null;
+          spinAnimation = null;
+          resolve(false);
+        }
 
         if (renderer) {
           renderer.dispose();
@@ -1120,20 +1196,25 @@
             renderer.domElement.parentNode.removeChild(renderer.domElement);
           }
         }
+
+        if (scene) {
+          const geometries = new Set();
+          const materials = new Set();
+          scene.traverse(object => {
+            if (object.geometry) geometries.add(object.geometry);
+            if (object.material) {
+              (Array.isArray(object.material) ? object.material : [object.material])
+                .forEach(material => materials.add(material));
+            }
+          });
+          geometries.forEach(geometry => geometry.dispose());
+          materials.forEach(material => material.dispose());
+        }
         renderer = null;
         scene = null;
         camera = null;
         canvasHost = null;
-
-        if (model) {
-          const geometries = new Set();
-          model.traverse(object => {
-            if (object.geometry) geometries.add(object.geometry);
-          });
-          geometries.forEach(geometry => geometry.dispose());
-          model = null;
-        }
-        materialCache.forEach(material => material.dispose());
+        model = null;
         materialCache.clear();
       }
 
@@ -1189,12 +1270,166 @@
         const animate = () => {
           frameId = requestAnimationFrame(animate);
           if (controls) controls.update();
+          if (spinAnimation && model) {
+            const elapsed = performance.now() - spinAnimation.start;
+            const progress = Math.min(1, elapsed / spinAnimation.duration);
+            const eased = 1 - Math.pow(1 - progress, 3);
+            model.rotation.y = spinAnimation.from + spinAnimation.angle * eased;
+            if (progress >= 1) {
+              model.rotation.y = spinAnimation.from + spinAnimation.angle;
+              spinAnimation = null;
+              if (spinResolve) {
+                const resolve = spinResolve;
+                spinResolve = null;
+                resolve(true);
+              }
+            }
+          }
           if (renderer && scene && camera) renderer.render(scene, camera);
         };
         animate();
       }
 
-      window.Chemistry3DPreview = { show, dispose };
+      async function showSpinner(svg, host) {
+        dispose();
+        canvasHost = host;
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xf7f9f7);
+
+        const width = Math.max(host.clientWidth, 320);
+        const height = Math.max(host.clientHeight, 320);
+        camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 5000);
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.setSize(width, height);
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        host.replaceChildren(renderer.domElement);
+        renderer.domElement.style.cssText = "display:block;width:100%;height:100%";
+
+        scene.add(new THREE.HemisphereLight(0xffffff, 0x667168, 2.1));
+        const key = new THREE.DirectionalLight(0xffffff, 2.4);
+        key.position.set(-100, 170, 110);
+        scene.add(key);
+        const fill = new THREE.DirectionalLight(0xffffff, 1.0);
+        fill.position.set(120, 70, -90);
+        scene.add(fill);
+
+        const planeSize = 460;
+        const floor = new THREE.Mesh(
+          new THREE.PlaneGeometry(planeSize, planeSize),
+          new THREE.MeshStandardMaterial({ color: 0xe5ebe6, roughness: 0.92, metalness: 0 })
+        );
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.y = 0;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        const grid = new THREE.GridHelper(planeSize * 0.96, 48, 0x87978c, 0xc6d0c8);
+        grid.position.y = 0.025;
+        (Array.isArray(grid.material) ? grid.material : [grid.material]).forEach(material => {
+          material.transparent = true;
+          material.opacity = 0.38;
+        });
+        scene.add(grid);
+
+        const blade = build(svg);
+        // ブレード面を水平（XZ平面）に置き、鉛直軸を回転軸とする。
+        blade.rotation.x = -Math.PI / 2;
+        blade.updateMatrixWorld(true);
+        const bladeBounds = new THREE.Box3().setFromObject(blade);
+        const bladeSize = bladeBounds.getSize(new THREE.Vector3());
+        const maxSpan = Math.max(bladeSize.x, bladeSize.z, 1);
+        const halfThickness = bladeSize.y / 2;
+        const clearance = Math.max(1.0, maxSpan * 0.012);
+        blade.position.y = halfThickness + clearance;
+
+        // 組み立て全体を回転させることで、ブレードと軸が一緒に回る。
+        model = new THREE.Group();
+        model.add(blade);
+
+        const shaftRadius = Math.max(1.35, maxSpan * 0.013);
+        const floorGap = 0.25;
+        const shaftTop = blade.position.y + halfThickness + maxSpan * 0.12;
+        const shaftHeight = shaftTop - floorGap;
+        const shaft = new THREE.Mesh(
+          new THREE.CylinderGeometry(shaftRadius, shaftRadius, shaftHeight, 24),
+          new THREE.MeshStandardMaterial({ color: 0x607268, roughness: 0.36, metalness: 0.35 })
+        );
+        shaft.position.y = floorGap + shaftHeight / 2;
+        model.add(shaft);
+
+        // 床に向かう先端。頂点は y=0 に置き、構造式の重心を通る軸と同心にする。
+        const tipHeight = Math.max(2.2, maxSpan * 0.035);
+        const tipRadius = shaftRadius * 1.55;
+        const tip = new THREE.Mesh(
+          new THREE.CylinderGeometry(tipRadius, 0, tipHeight, 24),
+          new THREE.MeshStandardMaterial({ color: 0x35473d, roughness: 0.32, metalness: 0.32 })
+        );
+        tip.position.y = tipHeight / 2;
+        model.add(tip);
+        scene.add(model);
+
+        const floorSize = new THREE.Vector3();
+        new THREE.Box3().setFromObject(blade).getSize(floorSize);
+        const viewSpan = Math.max(floorSize.x, floorSize.z, 100);
+        const planeFocus = blade.position.y * 0.45;
+        camera.position.set(viewSpan * 1.12, viewSpan * 1.05, viewSpan * 1.35);
+        camera.lookAt(0, planeFocus, 0);
+        camera.near = 0.1;
+        camera.far = planeSize * 8;
+        camera.updateProjectionMatrix();
+
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.075;
+        controls.target.set(0, planeFocus, 0);
+        controls.update();
+
+        observer = new ResizeObserver(() => {
+          if (!renderer || !camera || !canvasHost) return;
+          const w = Math.max(canvasHost.clientWidth, 1);
+          const h = Math.max(canvasHost.clientHeight, 1);
+          renderer.setSize(w, h);
+          camera.aspect = w / h;
+          camera.updateProjectionMatrix();
+        });
+        observer.observe(host);
+
+        const animate = () => {
+          frameId = requestAnimationFrame(animate);
+          if (controls) controls.update();
+          if (spinAnimation && model) {
+            const elapsed = performance.now() - spinAnimation.start;
+            const progress = Math.min(1, elapsed / spinAnimation.duration);
+            const eased = 1 - Math.pow(1 - progress, 3);
+            model.rotation.y = spinAnimation.from + spinAnimation.angle * eased;
+            if (progress >= 1) {
+              model.rotation.y = spinAnimation.from + spinAnimation.angle;
+              spinAnimation = null;
+              if (spinResolve) {
+                const resolve = spinResolve;
+                spinResolve = null;
+                resolve(true);
+              }
+            }
+          }
+          if (renderer && scene && camera) renderer.render(scene, camera);
+        };
+        animate();
+      }
+
+      function spin() {
+        if (!model || spinAnimation) return Promise.resolve(false);
+        spinAnimation = {
+          start: performance.now(),
+          duration: 1050,
+          from: model.rotation.y,
+          angle: Math.PI * 2 * 1.15
+        };
+        return new Promise(resolve => { spinResolve = resolve; });
+      }
+
+      window.Chemistry3DPreview = { show, showSpinner, spin, dispose };
     })();
   
   </script>
