@@ -494,6 +494,73 @@
         });
       }
 
+      function countFormulaAtoms(formula) {
+        const text = String(formula || "").replace(/\\s/g, "");
+        const parts = text.match(/[A-Z][a-z]?\\d*/g) || [];
+        if (parts.join("") !== text || parts.length === 0) return null;
+        return parts.reduce(function (sum, part) {
+          const match = part.match(/^([A-Z][a-z]?)(\\d*)$/);
+          return sum + (match[2] ? Number(match[2]) : 1);
+        }, 0);
+      }
+
+      function getStructureDrawOptions(formula) {
+        const atomCount = countFormulaAtoms(formula);
+        // RDKitの結合線幅は固定値だと、多数の原子が小さく収まる構造式で相対的に太く見える。
+        // 原子数に応じて線幅・二重結合の間隔・余白・ラベルサイズを段階的に下げる。
+        if (atomCount === null) {
+          return {
+            bondLineWidth: 1.15,
+            scaleBondWidth: true,
+            multipleBondOffset: 0.16,
+            padding: 0.06,
+            annotationFontScale: 0.7
+          };
+        }
+
+        let bondLineWidth;
+        let multipleBondOffset;
+        let padding;
+        let maxFontSize;
+        let minFontSize;
+
+        if (atomCount <= 18) {
+          bondLineWidth = 1.35;
+          multipleBondOffset = 0.18;
+          padding = 0.07;
+          maxFontSize = 22;
+          minFontSize = 10;
+        } else if (atomCount <= 35) {
+          bondLineWidth = 1.0;
+          multipleBondOffset = 0.15;
+          padding = 0.045;
+          maxFontSize = 16;
+          minFontSize = 8;
+        } else if (atomCount <= 65) {
+          bondLineWidth = 0.78;
+          multipleBondOffset = 0.12;
+          padding = 0.025;
+          maxFontSize = 12;
+          minFontSize = 7;
+        } else {
+          bondLineWidth = 0.58;
+          multipleBondOffset = 0.1;
+          padding = 0.015;
+          maxFontSize = 10;
+          minFontSize = 6;
+        }
+
+        return {
+          bondLineWidth: bondLineWidth,
+          scaleBondWidth: true,
+          multipleBondOffset: multipleBondOffset,
+          padding: padding,
+          minFontSize: minFontSize,
+          maxFontSize: maxFontSize,
+          annotationFontScale: atomCount > 35 ? 0.55 : 0.68
+        };
+      }
+
       function renderCompound(compound, query, matchedTerm) {
         if (!rdkit) {
           throw new Error("2D構造式の描画エンジンがまだ準備できていません。");
@@ -502,8 +569,10 @@
         if (!mol) {
           throw new Error("取得した構造データを読み取れませんでした。別の候補を選んでください。");
         }
+        const atomCount = countFormulaAtoms(compound.formula);
         try {
-          structure.innerHTML = mol.get_svg();
+          const drawOptions = getStructureDrawOptions(compound.formula);
+          structure.innerHTML = mol.get_svg_with_highlights(JSON.stringify(drawOptions));
         } finally {
           mol.delete();
         }
@@ -519,7 +588,8 @@
         const aliasNote = matchedTerm && normalizeName(matchedTerm) !== normalizeName(query)
           ? "（日本語名を英語別名「" + matchedTerm + "」に読み替え）"
           : "";
-        setStatus("構造式を表示しました" + aliasNote + "。データ元：PubChem（CID " + compound.cid + "）", false);
+        const sizeNote = atomCount !== null ? "（原子数 " + atomCount + "、線幅を自動調整）" : "";
+        setStatus("構造式を表示しました" + aliasNote + sizeNote + "。データ元：PubChem（CID " + compound.cid + "）", false);
       }
 
       async function searchCompound(rawQuery) {
