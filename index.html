@@ -1349,7 +1349,7 @@
 
         const shaftRadius = Math.max(1.35, maxSpan * 0.013);
         const floorGap = 0.25;
-        const shaftTop = blade.position.y + halfThickness + maxSpan * 0.12;
+        const shaftTop = blade.position.y + halfThickness + maxSpan * 0.035;
         const shaftHeight = shaftTop - floorGap;
         const shaft = new THREE.Mesh(
           new THREE.CylinderGeometry(shaftRadius, shaftRadius, shaftHeight, 24),
@@ -1359,7 +1359,7 @@
         model.add(shaft);
 
         // 床に向かう先端。頂点は y=0 に置き、構造式の重心を通る軸と同心にする。
-        const tipHeight = Math.max(2.2, maxSpan * 0.035);
+        const tipHeight = Math.max(0.8, blade.position.y - halfThickness - floorGap + 0.3);
         const tipRadius = shaftRadius * 1.55;
         const tip = new THREE.Mesh(
           new THREE.CylinderGeometry(tipRadius, 0, tipHeight, 24),
