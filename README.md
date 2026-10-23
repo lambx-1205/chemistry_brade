@@ -4,7 +4,8 @@
 
 ## 現在の機能
 
-- 分子名を入力して PubChem から候補を検索
+- 分子名から PubChem の化学構造データを検索
+- 日本語の一般名に対応する英語別名を使って再検索（よく使う化合物名を内蔵辞書に登録）
 - 分子式・IUPAC名・CID・SMILES を表示
 - RDKit.js で SMILES から2D構造式を描画
 - 同名などで候補が複数ある場合、表示する候補を選択
@@ -15,6 +16,7 @@
 - **PubChem PUG REST**: 分子名からCIDを探し、構造情報を取得します。
 - **RDKit.js**: 取得したSMILESを読み取り、2D構造式をSVGで描画します。
 - どちらもCDN/API経由で読み込むため、動作にはインターネット接続が必要です。GitHub Pages側にサーバーやビルド工程を追加する必要はありません。
+- 日本語名はまずそのまま検索し、見つからない場合は内蔵の日本語別名辞書に登録された英語名で検索します。辞書にない日本語名や特殊な命名の化合物は、英語名またはIUPAC名で検索してください。
 
 ## これからの実装
 
@@ -27,4 +29,4 @@
 
 ## GitHub Pages
 
-.github/workflows/pages.yml は main への push 時に静的サイトをデプロイします。初回のみ、リポジトリの **Settings → Pages → Build and deployment → Source** で **GitHub Actions** を選んでください。デプロイの成否は **Actions** タブで確認できます。
+`.github/workflows/pages.yml` は `main` への push 時に静的サイトをデプロイします。初回のみ、リポジトリの **Settings → Pages → Build and deployment → Source** で **GitHub Actions** を選んでください。デプロイの成否は **Actions** タブで確認できます。
