@@ -945,7 +945,9 @@
 
       function addStrokePath(group, path, style, width, height) {
         const rawWidth = Number.parseFloat(style.strokeWidth);
-        const strokeWidth = Number.isFinite(rawWidth) && rawWidth > 0 ? rawWidth : 1;
+        const baseWidth = Number.isFinite(rawWidth) && rawWidth > 0 ? rawWidth : 1;
+        // 3Dモデルでは結合線を少し太くし、細い線が欠けたりブレードが弱く見えたりするのを抑える。
+        const strokeWidth = Math.max(baseWidth * 1.5, 1.8);
         const radius = strokeWidth / 2;
         const opacity = opacityValue(style.opacity, 1) *
           opacityValue(style.strokeOpacity, 1);
