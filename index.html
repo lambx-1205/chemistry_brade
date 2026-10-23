@@ -50,6 +50,14 @@
     .structure { padding: 12px 20px; min-height: 260px; display: flex; align-items: center; justify-content: center; }
     .structure svg { display: block; width: 100%; max-width: 640px; height: auto; }
     .structure svg text { font-family: Arial, sans-serif; }
+    .preview-toolbar { display: flex; justify-content: flex-end; padding: 0 20px 14px; }
+    .preview-panel { margin: 0 20px 18px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #f7f9f7; }
+    .preview-panel[hidden] { display: none !important; }
+    .preview-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; background: #fff; border-bottom: 1px solid var(--line); }
+    .preview-head strong { font-size: 13px; }
+    .secondary { border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); padding: 6px 10px; font-size: 12px; }
+    #preview-canvas { width: 100%; height: 420px; display: block; touch-action: pan-y; }
+    .preview-note { margin: 0; padding: 0 14px 12px; color: var(--muted); font-size: 12px; }
     .compound-info { border-top: 1px solid var(--line); padding: 18px 20px; }
     .compound-info h3 { margin: 0 0 10px; font-size: 16px; overflow-wrap: anywhere; }
     dl { display: grid; grid-template-columns: 105px minmax(0, 1fr); gap: 7px 12px; margin: 0; font-size: 13px; }
@@ -76,6 +84,8 @@
       .search-row .primary { width: 100%; }
       .result-head { align-items: flex-start; flex-direction: column; gap: 2px; }
       .structure { padding: 10px; }
+      #preview-canvas { height: 320px; }
+      .preview-panel { margin-left: 10px; margin-right: 10px; }
       dl { grid-template-columns: 82px minmax(0, 1fr); }
       .footer-inner { padding: 12px 0; align-items: flex-start; flex-direction: column; justify-content: center; }
     }
@@ -131,6 +141,14 @@
       </div>
       <div class="placeholder" id="placeholder">分子名を検索すると、ここに構造式が表示されます。</div>
       <div class="structure" id="structure" hidden></div>
+      <div class="preview-toolbar" id="preview-toolbar" hidden>
+        <button class="primary" id="preview-button" type="button">プレビュー</button>
+      </div>
+      <section class="preview-panel" id="preview-panel" aria-label="3Dプレビュー" hidden>
+        <div class="preview-head"><strong>3Dプレビュー</strong><button class="secondary" id="preview-close" type="button">閉じる</button></div>
+        <div id="preview-canvas" role="img" aria-label="回転して確認できる3D構造式"></div>
+        <p class="preview-note">ドラッグで回転、スクロールで拡大・縮小できます。現段階では見た目のプレビューで、物理演算はまだ行いません。</p>
+      </section>
       <div class="compound-info" id="compound-info" hidden>
         <h3 id="compound-heading"></h3>
         <dl>
@@ -168,6 +186,11 @@
       const placeholder = document.getElementById("placeholder");
       const structure = document.getElementById("structure");
       const compoundInfo = document.getElementById("compound-info");
+      const previewToolbar = document.getElementById("preview-toolbar");
+      const previewButton = document.getElementById("preview-button");
+      const previewPanel = document.getElementById("preview-panel");
+      const previewClose = document.getElementById("preview-close");
+      const previewCanvas = document.getElementById("preview-canvas");
       const candidatePanel = document.getElementById("candidate-panel");
       const candidateSelect = document.getElementById("candidate-select");
       const candidateButton = document.getElementById("candidate-button");
@@ -584,6 +607,9 @@
         document.getElementById("smiles").textContent = compound.smiles;
         placeholder.hidden = true;
         structure.hidden = false;
+        previewToolbar.hidden = false;
+        previewPanel.hidden = true;
+        if (window.Chemistry3DPreview) window.Chemistry3DPreview.dispose();
         compoundInfo.hidden = false;
         const aliasNote = matchedTerm && normalizeName(matchedTerm) !== normalizeName(query)
           ? "（日本語名を英語別名「" + matchedTerm + "」に読み替え）"
@@ -698,6 +724,31 @@
           if (requestId === latestRequest) searchButton.disabled = false;
         }
       }
+
+      previewButton.addEventListener("click", async function () {
+        if (!structure.querySelector("svg")) {
+          setStatus("先に2D構造式を表示してください。", true);
+          return;
+        }
+        previewPanel.hidden = false;
+        previewButton.disabled = true;
+        previewButton.textContent = "生成中…";
+        try {
+          if (!window.Chemistry3DPreview) throw new Error("3D描画エンジンを読み込み中です。数秒待ってからもう一度お試しください。");
+          await window.Chemistry3DPreview.show(structure.querySelector("svg"), previewCanvas);
+          setStatus("3Dプレビューを表示しました。ドラッグして回転できます。", false);
+        } catch (error) {
+          previewPanel.hidden = true;
+          setStatus(error && error.message ? error.message : "3Dプレビューを作成できませんでした。", true);
+        } finally {
+          previewButton.disabled = false;
+          previewButton.textContent = "プレビュー";
+        }
+      });
+      previewClose.addEventListener("click", function () {
+        previewPanel.hidden = true;
+        if (window.Chemistry3DPreview) window.Chemistry3DPreview.dispose();
+      });
 
       form.addEventListener("submit", function (event) {
         event.preventDefault();
