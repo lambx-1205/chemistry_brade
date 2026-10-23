@@ -23,7 +23,14 @@
     .search-panel, .result-panel { border: 1px solid var(--line); border-radius: 8px; padding: 22px; }
     .field-label { display: block; margin-bottom: 7px; font-size: 13px; font-weight: 650; }
     .search-row { display: flex; gap: 8px; }
-    input[type="text"] { min-width: 0; flex: 1; padding: 11px 12px; border: 1px solid #cdd5cf; border-radius: 6px; font: inherit; font-size: 15px; }
+    .autocomplete { position: relative; flex: 1; min-width: 0; }
+    input[type="text"] { width: 100%; min-width: 0; padding: 11px 12px; border: 1px solid #cdd5cf; border-radius: 6px; font: inherit; font-size: 15px; }
+    .suggestions { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0; max-height: 280px; overflow-y: auto; border: 1px solid #cdd5cf; border-radius: 7px; background: #fff; box-shadow: 0 8px 24px rgba(25, 40, 30, .12); }
+    .suggestion { display: block; width: 100%; padding: 10px 12px; border: 0; border-bottom: 1px solid #edf0ed; background: #fff; color: var(--ink); text-align: left; font-size: 13px; }
+    .suggestion:last-child { border-bottom: 0; }
+    .suggestion:hover, .suggestion.active { background: var(--pale); }
+    .suggestion strong { font-weight: 700; }
+    .suggestion small { display: block; margin-top: 1px; color: var(--muted); font-size: 11px; }
     button { cursor: pointer; font: inherit; }
     button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #9ad6b8; outline-offset: 2px; }
     .primary { border: 1px solid var(--green); border-radius: 6px; background: var(--green); color: white; padding: 10px 16px; font-size: 14px; font-weight: 650; }
@@ -92,7 +99,10 @@
       <form id="molecule-form">
         <label class="field-label" for="molecule-name">分子名（日本語・英語）</label>
         <div class="search-row">
-          <input id="molecule-name" name="molecule-name" type="text" value="benzene" placeholder="例：ベンゼン / アスピリン" autocomplete="off" required>
+          <div class="autocomplete" id="autocomplete">
+            <input id="molecule-name" name="molecule-name" type="text" value="benzene" placeholder="例：グルコース / glucose" autocomplete="off" autocapitalize="off" spellcheck="false" aria-autocomplete="list" aria-controls="suggestions" aria-expanded="false" role="combobox" required>
+            <div class="suggestions" id="suggestions" role="listbox" aria-label="分子名の候補" hidden></div>
+          </div>
           <button class="primary" id="search-button" type="submit">構造式を表示</button>
         </div>
       </form>
@@ -151,6 +161,8 @@
       const form = document.getElementById("molecule-form");
       const nameInput = document.getElementById("molecule-name");
       const searchButton = document.getElementById("search-button");
+      const autocomplete = document.getElementById("autocomplete");
+      const suggestionList = document.getElementById("suggestions");
       const statusText = document.getElementById("status");
       const placeholder = document.getElementById("placeholder");
       const structure = document.getElementById("structure");
@@ -162,6 +174,34 @@
       let currentCandidates = [];
       let currentMatchedTerm = "";
       let latestRequest = 0;
+      let visibleSuggestions = [];
+      let activeSuggestionIndex = -1;
+
+      // 入力途中の候補は、食品・生体分子など一般的な学習用分子に絞ったローカル辞書から即時表示。
+      // 候補選択後の構造取得は、既存の PubChem 検索処理が行う。
+      const AUTOCOMPLETE_COMPOUNDS = [
+        { english: "water", japanese: "水", aliases: [] },
+        { english: "carbon dioxide", japanese: "二酸化炭素", aliases: [] },
+        { english: "glucose", japanese: "グルコース", aliases: ["ブドウ糖"] },
+        { english: "fructose", japanese: "フルクトース", aliases: ["果糖"] },
+        { english: "sucrose", japanese: "スクロース", aliases: ["ショ糖", "蔗糖"] },
+        { english: "lactose", japanese: "ラクトース", aliases: ["乳糖"] },
+        { english: "maltose", japanese: "マルトース", aliases: ["麦芽糖"] },
+        { english: "citric acid", japanese: "クエン酸", aliases: [] },
+        { english: "lactic acid", japanese: "乳酸", aliases: [] },
+        { english: "glycine", japanese: "グリシン", aliases: [] },
+        { english: "alanine", japanese: "アラニン", aliases: [] },
+        { english: "valine", japanese: "バリン", aliases: [] },
+        { english: "leucine", japanese: "ロイシン", aliases: [] },
+        { english: "serine", japanese: "セリン", aliases: [] },
+        { english: "aspartic acid", japanese: "アスパラギン酸", aliases: [] },
+        { english: "glutamic acid", japanese: "グルタミン酸", aliases: [] },
+        { english: "lysine", japanese: "リジン", aliases: ["リシン"] },
+        { english: "phenylalanine", japanese: "フェニルアラニン", aliases: [] },
+        { english: "tyrosine", japanese: "チロシン", aliases: [] },
+        { english: "tryptophan", japanese: "トリプトファン", aliases: [] },
+        { english: "proline", japanese: "プロリン", aliases: [] }
+      ];
 
       // PubChem の名前検索は日本語の一般名を必ずしも収録していないため、
       // よく使う名称だけ英語名へ読み替えて再検索する。
@@ -248,6 +288,122 @@
       registerJapaneseName("tyrosine", ["チロシン"]);
       registerJapaneseName("tryptophan", ["トリプトファン"]);
       registerJapaneseName("proline", ["プロリン"]);
+
+      function hideSuggestions() {
+        suggestionList.hidden = true;
+        suggestionList.replaceChildren();
+        nameInput.setAttribute("aria-expanded", "false");
+        nameInput.removeAttribute("aria-activedescendant");
+        visibleSuggestions = [];
+        activeSuggestionIndex = -1;
+      }
+
+      function updateActiveSuggestion() {
+        const buttons = suggestionList.querySelectorAll(".suggestion");
+        buttons.forEach(function (button, index) {
+          const active = index === activeSuggestionIndex;
+          button.classList.toggle("active", active);
+          button.setAttribute("aria-selected", String(active));
+        });
+        if (activeSuggestionIndex >= 0 && buttons[activeSuggestionIndex]) {
+          nameInput.setAttribute("aria-activedescendant", buttons[activeSuggestionIndex].id);
+          buttons[activeSuggestionIndex].scrollIntoView({ block: "nearest" });
+        } else {
+          nameInput.removeAttribute("aria-activedescendant");
+        }
+      }
+
+      function chooseSuggestion(compound) {
+        const query = normalizeName(nameInput.value);
+        const japaneseInput = /[ぁ-ゖァ-ヺ一-龯ｦ-ﾟ]/.test(nameInput.value);
+        const japaneseTerms = [compound.japanese].concat(compound.aliases || []);
+        const matchingJapanese = japaneseTerms.find(function (term) {
+          return normalizeName(term).startsWith(query);
+        });
+        const chosenTerm = japaneseInput ? (matchingJapanese || compound.japanese) : compound.english;
+        nameInput.value = chosenTerm;
+        hideSuggestions();
+        searchCompound(chosenTerm);
+      }
+
+      function showSuggestions() {
+        const rawQuery = nameInput.value.trim();
+        const query = normalizeName(rawQuery);
+        const japaneseInput = /[ぁ-ゖァ-ヺ一-龯ｦ-ﾟ]/.test(rawQuery);
+
+        if (!query || (query.length < 2 && !japaneseInput)) {
+          hideSuggestions();
+          return;
+        }
+
+        const results = AUTOCOMPLETE_COMPOUNDS.filter(function (compound) {
+          const searchableTerms = [compound.english, compound.japanese].concat(compound.aliases || []);
+          return searchableTerms.some(function (term) {
+            return normalizeName(term).startsWith(query);
+          });
+        }).slice(0, 7);
+
+        visibleSuggestions = results;
+        activeSuggestionIndex = -1;
+        suggestionList.replaceChildren();
+
+        results.forEach(function (compound, index) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "suggestion";
+          button.id = "molecule-suggestion-" + index;
+          button.setAttribute("role", "option");
+          button.setAttribute("aria-selected", "false");
+
+          const title = document.createElement("strong");
+          title.textContent = compound.japanese;
+          const translation = document.createElement("small");
+          translation.textContent = compound.english;
+          button.appendChild(title);
+          button.appendChild(translation);
+
+          button.addEventListener("pointerdown", function (event) {
+            event.preventDefault();
+          });
+          button.addEventListener("click", function () {
+            chooseSuggestion(compound);
+          });
+          suggestionList.appendChild(button);
+        });
+
+        suggestionList.hidden = results.length === 0;
+        nameInput.setAttribute("aria-expanded", String(results.length > 0));
+        nameInput.removeAttribute("aria-activedescendant");
+      }
+
+      nameInput.addEventListener("input", showSuggestions);
+      nameInput.addEventListener("keydown", function (event) {
+        if (suggestionList.hidden || visibleSuggestions.length === 0) {
+          if (event.key === "Escape") hideSuggestions();
+          return;
+        }
+
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          activeSuggestionIndex = (activeSuggestionIndex + 1) % visibleSuggestions.length;
+          updateActiveSuggestion();
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault();
+          activeSuggestionIndex = activeSuggestionIndex <= 0
+            ? visibleSuggestions.length - 1
+            : activeSuggestionIndex - 1;
+          updateActiveSuggestion();
+        } else if (event.key === "Enter" && activeSuggestionIndex >= 0) {
+          event.preventDefault();
+          chooseSuggestion(visibleSuggestions[activeSuggestionIndex]);
+        } else if (event.key === "Escape") {
+          hideSuggestions();
+        }
+      });
+
+      document.addEventListener("pointerdown", function (event) {
+        if (!autocomplete.contains(event.target)) hideSuggestions();
+      });
 
       function setStatus(message, isError) {
         statusText.textContent = message;
@@ -410,12 +566,14 @@
 
       form.addEventListener("submit", function (event) {
         event.preventDefault();
+        hideSuggestions();
         searchCompound(nameInput.value);
       });
 
       document.querySelectorAll("[data-query]").forEach(function (button) {
         button.addEventListener("click", function () {
           nameInput.value = button.getAttribute("data-query");
+          hideSuggestions();
           searchCompound(nameInput.value);
         });
       });
