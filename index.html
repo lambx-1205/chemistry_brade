@@ -495,11 +495,11 @@
       }
 
       function countFormulaAtoms(formula) {
-        const text = String(formula || "").replace(/\\s/g, "");
-        const parts = text.match(/[A-Z][a-z]?\\d*/g) || [];
+        const text = String(formula || "").replace(/\s/g, "");
+        const parts = text.match(/[A-Z][a-z]?\d*/g) || [];
         if (parts.join("") !== text || parts.length === 0) return null;
         return parts.reduce(function (sum, part) {
-          const match = part.match(/^([A-Z][a-z]?)(\\d*)$/);
+          const match = part.match(/^([A-Z][a-z]?)(\d*)$/);
           return sum + (match[2] ? Number(match[2]) : 1);
         }, 0);
       }
