@@ -1062,7 +1062,8 @@
         });
         // グループ原点が、重なりを除いた投影面積の重心になる。
         // 全パーツは同じ厚みで前後対称なので、奥行き方向の重心は z=0。
-        group.userData.centroid = { x: center.x, y: center.y, z: center.z };
+        group.userData.sourceCentroid = { x: center.x, y: center.y, z: center.z };
+        group.userData.centroid = { x: 0, y: 0, z: 0 };
         return center;
       }
 
@@ -1101,11 +1102,7 @@
         // 重心を原点に合わせてからスケール。これにより原点を通る軸で自然に回転できる。
         const centroid = recenterModelAtCentroid(group);
         group.scale.setScalar(100 / Math.max(width, height));
-        group.userData.centroid = {
-          x: centroid.x * group.scale.x,
-          y: centroid.y * group.scale.y,
-          z: centroid.z * group.scale.z
-        };
+        group.userData.centroid = { x: 0, y: 0, z: 0 };
         return group;
       }
 
