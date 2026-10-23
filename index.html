@@ -968,6 +968,104 @@
         });
       }
 
+      function computeOccupiedAreaCentroid(group) {
+        const geometries = [];
+        const bounds = new THREE.Box3();
+        group.traverse(object => {
+          if (!object.isMesh || !object.geometry) return;
+          const geometry = object.geometry;
+          const position = geometry.getAttribute("position");
+          if (!position || position.count < 3) return;
+          geometry.computeBoundingBox();
+          if (!geometry.boundingBox) return;
+          geometries.push(geometry);
+          bounds.union(geometry.boundingBox);
+        });
+
+        if (!geometries.length || bounds.isEmpty()) return new THREE.Vector3(0, 0, 0);
+
+        const minX = bounds.min.x, maxX = bounds.max.x;
+        const minY = bounds.min.y, maxY = bounds.max.y;
+        const spanX = Math.max(maxX - minX, 1e-6);
+        const spanY = Math.max(maxY - minY, 1e-6);
+        const resolution = 1024;
+        const padding = 8;
+        const scale = (resolution - padding * 2) / Math.max(spanX, spanY);
+        const drawWidth = spanX * scale;
+        const drawHeight = spanY * scale;
+        const offsetX = (resolution - drawWidth) / 2;
+        const offsetY = (resolution - drawHeight) / 2;
+
+        const canvas = document.createElement("canvas");
+        canvas.width = resolution;
+        canvas.height = resolution;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context) return new THREE.Vector3(0, 0, 0);
+        context.clearRect(0, 0, resolution, resolution);
+        context.fillStyle = "#000";
+        context.globalAlpha = 1;
+
+        const px = x => offsetX + (x - minX) * scale;
+        const py = y => offsetY + (maxY - y) * scale;
+
+        // 各パーツを上から投影し、重なった領域を二重に数えず「占有領域」として合成する。
+        // 交差する結合線や接合部を複数回加算しないため、単純な部品重心の平均より安定する。
+        geometries.forEach(geometry => {
+          const position = geometry.getAttribute("position");
+          const index = geometry.getIndex();
+          const count = index ? index.count : position.count;
+          for (let i = 0; i + 2 < count; i += 3) {
+            const ia = index ? index.getX(i) : i;
+            const ib = index ? index.getX(i + 1) : i + 1;
+            const ic = index ? index.getX(i + 2) : i + 2;
+            context.beginPath();
+            context.moveTo(px(position.getX(ia)), py(position.getY(ia)));
+            context.lineTo(px(position.getX(ib)), py(position.getY(ib)));
+            context.lineTo(px(position.getX(ic)), py(position.getY(ic)));
+            context.closePath();
+            context.fill();
+          }
+        });
+
+        const pixels = context.getImageData(0, 0, resolution, resolution).data;
+        let total = 0, weightedX = 0, weightedY = 0;
+        for (let y = 0; y < resolution; y++) {
+          for (let x = 0; x < resolution; x++) {
+            const alpha = pixels[(y * resolution + x) * 4 + 3] / 255;
+            if (alpha <= 0) continue;
+            total += alpha;
+            weightedX += alpha * x;
+            weightedY += alpha * y;
+          }
+        }
+        if (total <= 0) return new THREE.Vector3(0, 0, 0);
+
+        const centerPixelX = weightedX / total + 0.5;
+        const centerPixelY = weightedY / total + 0.5;
+        return new THREE.Vector3(
+          minX + (centerPixelX - offsetX) / scale,
+          maxY - (centerPixelY - offsetY) / scale,
+          0
+        );
+      }
+
+      function recenterModelAtCentroid(group) {
+        const center = computeOccupiedAreaCentroid(group);
+        const geometries = new Set();
+        group.traverse(object => {
+          if (object.isMesh && object.geometry) geometries.add(object.geometry);
+        });
+        geometries.forEach(geometry => {
+          geometry.translate(-center.x, -center.y, -center.z);
+          geometry.computeBoundingBox();
+          geometry.computeBoundingSphere();
+        });
+        // グループ原点が、重なりを除いた投影面積の重心になる。
+        // 全パーツは同じ厚みで前後対称なので、奥行き方向の重心は z=0。
+        group.userData.centroid = { x: center.x, y: center.y, z: center.z };
+        return center;
+      }
+
       function build(svg) {
         const parsed = new SVGLoader().parse(new XMLSerializer().serializeToString(svg));
         const viewBox = (svg.getAttribute("viewBox") || "")
@@ -1000,8 +1098,14 @@
           }
         });
 
-        // RDKitの原子ラベルは塗りつぶしパスとして含まれるため、平面テキストを重ねない。
+        // 重心を原点に合わせてからスケール。これにより原点を通る軸で自然に回転できる。
+        const centroid = recenterModelAtCentroid(group);
         group.scale.setScalar(100 / Math.max(width, height));
+        group.userData.centroid = {
+          x: centroid.x * group.scale.x,
+          y: centroid.y * group.scale.y,
+          z: centroid.z * group.scale.z
+        };
         return group;
       }
 
