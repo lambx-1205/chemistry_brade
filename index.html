@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#091116">
+  <meta name="description" content="化学構造式をブレードに。分子の形と3D物理演算で勝負する、化学ベイブレード構想サイト。">
+  <title>CHEMISTRY BRADE — 分子で、ぶつかれ。</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #091116;
+      --panel: #101c22;
+      --panel-soft: #132229;
+      --line: rgba(177, 218, 219, .14);
+      --text: #eef7f5;
+      --muted: #95aaa9;
+      --mint: #9cffc7;
+      --cyan: #69e7e9;
+      --orange: #ffb57b;
+      --mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      --display: "Space Grotesk", "Noto Sans JP", sans-serif;
+      --jp: "Noto Sans JP", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 88px; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(ellipse at 76% 12%, rgba(28, 103, 103, .20), transparent 34rem),
+        radial-gradient(ellipse at 4% 48%, rgba(52, 91, 77, .10), transparent 30rem),
+        var(--bg);
+      color: var(--text);
+      font-family: var(--jp);
+      line-height: 1.7;
+      overflow-x: hidden;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background-image: linear-gradient(rgba(164, 214, 209, .025) 1px, transparent 1px), linear-gradient(90deg, rgba(164, 214, 209, .025) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: linear-gradient(to bottom, black, transparent 84%);
+    }
+    a { color: inherit; text-decoration: none; }
+    button, input { font: inherit; }
+    button, a { -webkit-tap-highlight-color: transparent; }
+    .shell { width: min(1180px, calc(100% - 48px)); margin-inline: auto; }
+    .mono { font-family: var(--mono); letter-spacing: .075em; text-transform: uppercase; }
+    .eyebrow { color: var(--mint); font-family: var(--mono); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; }
+    .topbar {
+      position: sticky; top: 0; z-index: 20;
+      background: rgba(9, 17, 22, .84);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(16px);
+    }
+    .nav { height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 28px; }
+    .brand { display: inline-flex; gap: 12px; align-items: center; min-width: max-content; }
+    .brand-mark {
+      width: 36px; height: 36px; display: grid; place-items: center; position: relative;
+      border: 1px solid rgba(156, 255, 199, .45); border-radius: 11px;
+      background: linear-gradient(145deg, rgba(156,255,199,.12), rgba(105,231,233,.03));
+      color: var(--mint);
+    }
+    .brand-mark svg { width: 25px; height: 25px; }
+    .brand-name { font: 700 15px/1 var(--display); letter-spacing: .09em; }
+    .brand-sub { display: block; margin-top: 5px; color: var(--muted); font: 9px/1 var(--mono); letter-spacing: .15em; }
+    .nav-links { display: flex; gap: 28px; align-items: center; color: #a7bab8; font-size: 12px; }
+    .nav-links a { transition: color .2s ease; }
+    .nav-links a:hover { color: var(--mint); }
+    .nav-cta, .button {
+      display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+      border-radius: 9px; border: 1px solid transparent; padding: 12px 17px;
+      background: var(--mint); color: #07150f; font-weight: 800; font-size: 12px;
+      box-shadow: 0 0 24px rgba(156, 255, 199, .08);
+      transition: transform .2s ease, box-shadow .2s ease, background .2s ease;
+    }
+    .nav-cta:hover, .button:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(156,255,199,.16); }
+    .button.secondary { background: rgba(255,255,255,.025); border-color: var(--line); color: var(--text); box-shadow: none; }
+    .button.secondary:hover { border-color: rgba(156,255,199,.5); color: var(--mint); }
+    .arrow { font-size: 17px; line-height: .8; }
+    .menu-toggle { display: none; border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 8px; padding: 8px 10px; }
+    .hero { padding: 76px 0 64px; }
+    .hero-grid { display: grid; grid-template-columns: minmax(0, 1.03fr) minmax(380px, .97fr); gap: 52px; align-items: center; }
+    .hero-copy { position: relative; z-index: 1; }
+    .status-line { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 23px; }
+    .status-pill { display: inline-flex; align-items: center; gap: 8px; border: 1px solid rgba(156,255,199,.23); padding: 5px 9px; border-radius: 5px; background: rgba(156,255,199,.055); font: 10px var(--mono); letter-spacing: .08em; color: var(--mint); }
+    .live-dot { width: 6px; height: 6px; border-radius: 100%; background: var(--mint); box-shadow: 0 0 10px var(--mint); }
+    .status-note { color: #6f8484; font: 10px var(--mono); letter-spacing: .08em; }
+    h1 { margin: 0; font: 700 clamp(43px, 5.2vw, 70px)/1.12 var(--jp); letter-spacing: -.065em; }
+    h1 .accent { display: block; color: var(--mint); text-shadow: 0 0 36px rgba(156,255,199,.12); }
+    .hero-lead { max-width: 480px; margin: 23px 0 27px; color: #b2c3c1; font-size: 14px; line-height: 2.05; }
+    .hero-lead strong { color: var(--text); font-weight: 600; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 11px; }
+    .micro-note { margin-top: 17px; color: #718887; font: 10px/1.9 var(--mono); letter-spacing: .035em; }
+    .micro-note .square { color: var(--mint); margin-right: 7px; }
+    .hero-visual { min-width: 0; position: relative; }
+    .arena-card {
+      position: relative; min-height: 455px; overflow: hidden;
+      border: 1px solid rgba(159, 211, 207, .19); border-radius: 20px;
+      background:
+        radial-gradient(ellipse at 50% 46%, rgba(48, 137, 128, .20), transparent 53%),
+        linear-gradient(150deg, rgba(18, 38, 43, .95), rgba(9, 18, 24, .96));
+      box-shadow: 0 24px 80px rgba(0,0,0,.18), inset 0 1px rgba(255,255,255,.025);
+    }
+    .arena-card::before, .arena-card::after { content: ""; position: absolute; pointer-events: none; z-index: 2; }
+    .arena-card::before { inset: 0; background: linear-gradient(90deg, transparent 49.8%, rgba(156,255,199,.035) 50%, transparent 50.2%), linear-gradient(transparent 49.8%, rgba(156,255,199,.035) 50%, transparent 50.2%); background-size: 70px 70px; mask-image: radial-gradient(ellipse, black 10%, transparent 72%); }
+    .arena-card::after { inset: 12px; border: 1px solid rgba(156,255,199,.09); border-radius: 12px; }
+    .arena-top, .arena-bottom { position: absolute; z-index: 3; left: 25px; right: 25px; display: flex; justify-content: space-between; align-items: flex-start; pointer-events: none; }
+    .arena-top { top: 23px; }
+    .arena-bottom { bottom: 23px; align-items: flex-end; }
+    .arena-label { font: 10px/1.7 var(--mono); letter-spacing: .09em; color: #b6cbca; }
+    .arena-label strong { display: block; font-size: 12px; color: var(--text); letter-spacing: .04em; }
+    .arena-corner { text-align: right; color: #71918d; font: 9px/1.8 var(--mono); }
+    .atom-key { display: flex; gap: 12px; color: #97afac; font: 9px var(--mono); }
+    .atom-key span { display: inline-flex; align-items: center; gap: 5px; }
+    .atom-key i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #e7f0ed; }
+    .atom-key .carbon { background: #3e6664; border: 1px solid #92beba; }
+    .mass-chip { border: 1px solid rgba(156,255,199,.18); background: rgba(9,17,22,.55); border-radius: 7px; padding: 8px 10px; color: var(--mint); font: 10px var(--mono); }
+    #molecule-scene { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; display: block; }
+    .scene-fallback { position: absolute; inset: 0; display: grid; place-items: center; z-index: 1; }
+    .scene-fallback svg { width: 74%; max-width: 330px; filter: drop-shadow(0 0 18px rgba(105,231,233,.14)); }
+    .orbit-note { position: absolute; z-index: 3; right: 25px; top: 50%; transform: translateY(-50%); writing-mode: vertical-rl; color: rgba(159,229,218,.6); font: 9px var(--mono); letter-spacing: .22em; }
+    .under-hero { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: rgba(255,255,255,.012); }
+    .flow-strip { display: grid; grid-template-columns: repeat(4, 1fr); }
+    .flow-step { display: flex; gap: 12px; align-items: center; padding: 19px 20px; border-right: 1px solid var(--line); }
+    .flow-step:first-child { border-left: 1px solid var(--line); }
+    .flow-num { color: var(--mint); font: 11px var(--mono); }
+    .flow-label { color: #c4d2d0; font-size: 11px; font-weight: 600; }
+    .flow-desc { display: block; color: #6f8583; font-size: 9px; font-weight: 400; }
+    section.content-section { padding: 104px 0; }
+    .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 30px; margin-bottom: 35px; }
+    .section-head h2 { margin: 10px 0 0; font: 700 clamp(30px, 4vw, 43px)/1.2 var(--jp); letter-spacing: -.055em; }
+    .section-head p { max-width: 365px; margin: 0 0 3px; color: var(--muted); font-size: 12px; line-height: 1.9; }
+    .feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .feature-card {
+      position: relative; min-height: 245px; padding: 25px; overflow: hidden;
+      background: linear-gradient(145deg, rgba(19,34,40,.92), rgba(12,22,27,.85));
+      border: 1px solid var(--line); border-radius: 13px;
+      transition: transform .22s ease, border-color .22s ease;
+    }
+    .feature-card:hover { transform: translateY(-4px); border-color: rgba(156,255,199,.3); }
+    .feature-card::after { content: ""; position: absolute; width: 115px; height: 115px; right: -30px; bottom: -36px; border: 1px solid rgba(156,255,199,.09); border-radius: 50%; box-shadow: 0 0 0 17px rgba(156,255,199,.025), 0 0 0 34px rgba(156,255,199,.018); }
+    .feature-icon { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid rgba(156,255,199,.19); border-radius: 10px; background: rgba(156,255,199,.06); color: var(--mint); }
+    .feature-icon svg { width: 21px; height: 21px; }
+    .feature-index { position: absolute; top: 27px; right: 25px; color: #526968; font: 11px var(--mono); }
+    .feature-card h3 { margin: 24px 0 8px; font-size: 16px; letter-spacing: -.025em; }
+    .feature-card p { max-width: 310px; margin: 0; color: #91a7a5; font-size: 12px; line-height: 1.95; }
+    .feature-tag { display: inline-block; margin-top: 17px; color: var(--mint); font: 9px var(--mono); letter-spacing: .12em; }
+    .molecules-section { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: linear-gradient(180deg, rgba(18,33,39,.35), rgba(9,17,22,.2)); }
+    .molecule-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 13px; }
+    .molecule-card { min-width: 0; border: 1px solid var(--line); border-radius: 12px; padding: 22px 20px 19px; background: rgba(8,16,20,.58); }
+    .molecule-art { height: 95px; display: grid; place-items: center; margin-bottom: 17px; color: var(--mint); }
+    .molecule-art svg { width: 100%; max-width: 122px; height: 92px; overflow: visible; }
+    .molecule-card:nth-child(2) .molecule-art { color: #84dfff; }
+    .molecule-card:nth-child(3) .molecule-art { color: #ffbe88; }
+    .molecule-card:nth-child(4) .molecule-art { color: #d2afff; }
+    .mol-type { color: #78918e; font: 9px var(--mono); letter-spacing: .1em; }
+    .molecule-card h3 { margin: 7px 0 0; font: 600 18px var(--display); letter-spacing: -.03em; }
+    .formula { margin-top: 4px; color: var(--mint); font: 12px var(--mono); letter-spacing: .045em; }
+    .mol-data { margin-top: 15px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; gap: 8px; color: #738986; font: 9px var(--mono); }
+    .mol-data strong { color: #c4d3d0; font-weight: 500; }
+    .lab-cta { padding: 80px 0 92px; }
+    .lab-panel {
+      display: grid; grid-template-columns: 1fr auto; gap: 30px; align-items: center;
+      padding: 38px 42px; border: 1px solid rgba(156,255,199,.23); border-radius: 16px;
+      background: radial-gradient(ellipse at 0% 0%, rgba(156,255,199,.10), transparent 48%), linear-gradient(120deg, rgba(18,38,41,.8), rgba(13,23,29,.92));
+    }
+    .lab-panel h2 { margin: 9px 0 8px; font-size: clamp(25px, 3vw, 34px); letter-spacing: -.055em; }
+    .lab-panel p { max-width: 590px; margin: 0; color: #9bb0ad; font-size: 12px; line-height: 1.95; }
+    .lab-actions { display: flex; flex-direction: column; gap: 9px; align-items: stretch; min-width: 180px; }
+    .coming-note { margin-top: 12px; color: #718785; text-align: center; font: 9px var(--mono); }
+    footer { border-top: 1px solid var(--line); }
+    .footer-inner { min-height: 82px; display: flex; align-items: center; justify-content: space-between; gap: 20px; color: #718583; font: 9px var(--mono); letter-spacing: .08em; }
+    .footer-brand { color: #bacbc7; font-family: var(--display); font-weight: 700; font-size: 11px; }
+    .footer-inner a { transition: color .2s ease; }
+    .footer-inner a:hover { color: var(--mint); }
+    .reveal { opacity: 0; transform: translateY(18px); transition: opacity .65s ease, transform .65s ease; }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+      .reveal { opacity: 1; transform: none; }
+    }
+    @media (max-width: 920px) {
+      .hero { padding-top: 54px; }
+      .hero-grid { grid-template-columns: 1fr; gap: 38px; }
+      .hero-copy { max-width: 690px; }
+      .hero-visual { max-width: 650px; width: 100%; margin-inline: auto; }
+      .arena-card { min-height: 425px; }
+      .flow-step { padding: 17px 12px; }
+      .molecule-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 640px) {
+      .shell { width: min(100% - 32px, 520px); }
+      .nav { height: 64px; }
+      .brand-name { font-size: 13px; }
+      .brand-mark { width: 33px; height: 33px; }
+      .nav-links { display: none; position: absolute; top: 63px; left: 0; right: 0; padding: 20px 24px 24px; background: rgba(9,17,22,.98); border-bottom: 1px solid var(--line); flex-direction: column; align-items: stretch; gap: 18px; }
+      .nav-links.open { display: flex; }
+      .nav-links a { padding: 4px 0; }
+      .nav-cta { display: none; }
+      .menu-toggle { display: inline-flex; }
+      .hero { padding: 47px 0 42px; }
+      .hero-grid { gap: 31px; }
+      h1 { font-size: clamp(40px, 12vw, 58px); }
+      .hero-lead { font-size: 13px; margin-top: 18px; }
+      .hero-actions { display: grid; grid-template-columns: 1fr; }
+      .button { min-height: 46px; }
+      .arena-card { min-height: 365px; border-radius: 15px; }
+      .arena-top, .arena-bottom { left: 20px; right: 20px; }
+      .arena-top { top: 20px; }
+      .arena-bottom { bottom: 20px; }
+      .orbit-note { right: 16px; }
+      .flow-strip { grid-template-columns: repeat(2, 1fr); }
+      .flow-step { border-bottom: 1px solid var(--line); padding: 15px 11px; }
+      .flow-step:nth-child(odd) { border-left: 1px solid var(--line); }
+      .flow-step:nth-child(even) { border-right: 1px solid var(--line); }
+      section.content-section { padding: 72px 0; }
+      .section-head { display: block; margin-bottom: 25px; }
+      .section-head p { margin-top: 13px; }
+      .feature-grid { grid-template-columns: 1fr; }
+      .feature-card { min-height: 215px; }
+      .molecule-grid { gap: 10px; }
+      .molecule-card { padding: 17px 13px 14px; }
+      .molecule-art { height: 80px; margin-bottom: 10px; }
+      .molecule-art svg { height: 78px; }
+      .molecule-card h3 { font-size: 16px; }
+      .lab-cta { padding: 60px 0; }
+      .lab-panel { grid-template-columns: 1fr; padding: 28px 22px; }
+      .lab-actions { max-width: 270px; width: 100%; }
+      .footer-inner { padding: 22px 0; align-items: flex-start; flex-direction: column; gap: 9px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="shell nav">
+      <a class="brand" href="#top" aria-label="CHEMISTRY BRADE トップへ">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none">
+            <ellipse cx="16" cy="16" rx="12" ry="5.3" stroke="currentColor" stroke-width="1.4" transform="rotate(-38 16 16)"/>
+            <ellipse cx="16" cy="16" rx="12" ry="5.3" stroke="currentColor" stroke-width="1.4" transform="rotate(38 16 16)"/>
+            <circle cx="16" cy="16" r="2.8" fill="currentColor"/>
+          </svg>
+        </span>
+        <span><span class="brand-name">CHEMISTRY BRADE</span><span class="brand-sub">MOLECULAR SPIN BATTLE</span></span>
+      </a>
+      <nav class="nav-links" id="nav-links" aria-label="メインナビゲーション">
+        <a href="#concept">CONCEPT</a>
+        <a href="#molecules">MOLECULES</a>
+        <a href="#roadmap">ROADMAP</a>
+      </nav>
+      <a class="nav-cta" href="#molecules">分子を見てみる <span class="arrow">↗</span></a>
+      <button class="menu-toggle" id="menu-toggle" aria-controls="nav-links" aria-expanded="false" aria-label="メニューを開く">☰</button>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="shell hero-grid">
+        <div class="hero-copy">
+          <div class="status-line">
+            <span class="status-pill"><span class="live-dot"></span> LAB 00 / CONCEPT</span>
+            <span class="status-note">CHEMISTRY × PHYSICS</span>
+          </div>
+          <div class="eyebrow">A NEW KIND OF MOLECULAR BATTLE</div>
+          <h1>その構造式、<span class="accent">回してみる？</span></h1>
+          <p class="hero-lead">分子の形が、ブレードの個性になる。<strong>化学構造式から生まれたコマ</strong>を、3Dアリーナでぶつける。化学好きのための、新しい対戦遊びをつくろう。</p>
+          <div class="hero-actions">
+            <a class="button" href="#molecules">分子をチェックする <span class="arrow">↘</span></a>
+            <a class="button secondary" href="#concept">仕組みを知る <span class="arrow">→</span></a>
+          </div>
+          <p class="micro-note"><span class="square">■</span> NO DOWNLOAD / BROWSER-BASED / CHEMISTRY MEETS PHYSICS</p>
+        </div>
+
+        <div class="hero-visual">
+          <div class="arena-card" aria-label="ベンゼン分子をイメージした3Dプレビュー">
+            <div class="arena-top">
+              <div class="arena-label">MOLECULE PREVIEW<strong>BENZENE / ベンゼン</strong></div>
+              <div class="arena-corner">MODEL 001<br>AROMATIC RING</div>
+            </div>
+            <canvas id="molecule-scene" aria-label="回転するベンゼン分子モデル"></canvas>
+            <div class="scene-fallback" id="scene-fallback" aria-hidden="true">
+              <svg viewBox="0 0 260 220" fill="none">
+                <ellipse cx="130" cy="110" rx="91" ry="31" stroke="#356c67" stroke-width="1.2" stroke-dasharray="3 7"/>
+                <g stroke="#b6d8d1" stroke-width="5" stroke-linecap="round">
+                  <path d="M130 61L171 84L171 130L130 153L89 130L89 84Z"/>
+                </g>
+                <g stroke="#69e7e9" stroke-width="3" stroke-linecap="round">
+                  <path d="M130 74L160 91M160 123L130 140M100 123L100 91"/>
+                </g>
+                <g fill="#315b59" stroke="#a9e7d9" stroke-width="2">
+                  <circle cx="130" cy="61" r="11"/><circle cx="171" cy="84" r="11"/><circle cx="171" cy="130" r="11"/><circle cx="130" cy="153" r="11"/><circle cx="89" cy="130" r="11"/><circle cx="89" cy="84" r="11"/>
+                </g>
+                <g fill="#eaf7f2" stroke="#9dc9c1" stroke-width="1.5">
+                  <circle cx="130" cy="35" r="6"/><circle cx="193" cy="71" r="6"/><circle cx="193" cy="143" r="6"/><circle cx="130" cy="178" r="6"/><circle cx="67" cy="143" r="6"/><circle cx="67" cy="71" r="6"/>
+                </g>
+              </svg>
+            </div>
+            <div class="orbit-note">ROTATING STRUCTURE / 360°</div>
+            <div class="arena-bottom">
+              <div class="atom-key"><span><i class="carbon"></i> CARBON</span><span><i></i> HYDROGEN</span></div>
+              <div class="mass-chip">C₆H₆ <span style="color:#7a9d94">/</span> 78.11 g·mol⁻¹</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="under-hero">
+      <div class="shell flow-strip">
+        <div class="flow-step"><span class="flow-num">01</span><span class="flow-label">MOLECULE<span class="flow-desc">分子名から選ぶ</span></span></div>
+        <div class="flow-step"><span class="flow-num">02</span><span class="flow-label">STRUCTURE<span class="flow-desc">構造式を作る</span></span></div>
+        <div class="flow-step"><span class="flow-num">03</span><span class="flow-label">3D BLADE<span class="flow-desc">立体モデルに変換</span></span></div>
+        <div class="flow-step"><span class="flow-num">04</span><span class="flow-label">BATTLE<span class="flow-desc">物理演算で対戦</span></span></div>
+      </div>
+    </div>
+
+    <section class="content-section" id="concept">
+      <div class="shell">
+        <div class="section-head reveal">
+          <div><div class="eyebrow">THE IDEA / 01</div><h2>化学を、遊び場に。</h2></div>
+          <p>名前を入力するだけでも、自分で結合を描いてもいい。分子のかたちを、回して戦うための個性に変える。</p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card reveal">
+            <div class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5M7.5 10h5M10 7.5v5"/></svg>
+            </div>
+            <span class="feature-index">FEATURE / 01</span>
+            <h3>分子名から、ブレードへ。</h3>
+            <p>ベンゼン、カフェイン、アスピリン。名前や化学式を入口にして、実際の分子構造を呼び出す構想。</p>
+            <span class="feature-tag">NAME → STRUCTURE</span>
+          </article>
+          <article class="feature-card reveal">
+            <div class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="12" cy="18" r="2.2"/><path d="m8 6 7.8 0M7.3 7.8l3.5 8M16.7 7.8l-3.5 8"/></svg>
+            </div>
+            <span class="feature-index">FEATURE / 02</span>
+            <h3>構造式を、自分で描く。</h3>
+            <p>原子を置いて、結合をつなぐ。既存の分子を選ぶだけでなく、オリジナル構造からコマを設計できる編集画面へ。</p>
+            <span class="feature-tag">DRAW YOUR MOLECULE</span>
+          </article>
+          <article class="feature-card reveal">
+            <div class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="5.2"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>
+            </div>
+            <span class="feature-index">FEATURE / 03</span>
+            <h3>3Dアリーナで、激突。</h3>
+            <p>分子モデルを3D化し、回転・摩擦・衝突をシミュレーション。形状がどう勝敗に影響するかを見て楽しむ。</p>
+            <span class="feature-tag">3D MODEL + PHYSICS</span>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="content-section molecules-section" id="molecules">
+      <div class="shell">
+        <div class="section-head reveal">
+          <div><div class="eyebrow">STARTER MOLECULES / 02</div><h2>最初の対戦候補。</h2></div>
+          <p>形も、原子の種類も、分子量もさまざま。どんな構造が強いコマになるかは、これから検証。</p>
+        </div>
+        <div class="molecule-grid">
+          <article class="molecule-card reveal">
+            <div class="molecule-art" aria-hidden="true">
+              <svg viewBox="0 0 130 94" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M65 15 96 33 96 61 65 79 34 61 34 33Z" stroke-width="2.3"/>
+                <path d="M65 24 87 37M87 57 65 70M43 57 43 37" stroke-width="2"/>
+                <g fill="#091116" stroke-width="2"><circle cx="65" cy="15" r="4.2"/><circle cx="96" cy="33" r="4.2"/><circle cx="96" cy="61" r="4.2"/><circle cx="65" cy="79" r="4.2"/><circle cx="34" cy="61" r="4.2"/><circle cx="34" cy="33" r="4.2"/></g>
+              </svg>
+            </div>
+            <div class="mol-type">AROMATIC HYDROCARBON</div><h3>ベンゼン</h3><div class="formula">C₆H₆</div>
+            <div class="mol-data"><span>MOLAR MASS</span><strong>78.11 g/mol</strong></div>
+          </article>
+          <article class="molecule-card reveal">
+            <div class="molecule-art" aria-hidden="true">
+              <svg viewBox="0 0 130 94" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M30 29 51 17 72 29 72 53 51 65 30 53Z M72 29 93 17 110 29 107 49 87 56 72 53"/>
+                <path d="M30 29 16 21 M30 53 16 61 M51 17 51 7 M93 17 95 7 M110 29 120 24"/>
+                <g fill="#091116"><circle cx="30" cy="29" r="4"/><circle cx="51" cy="17" r="4"/><circle cx="72" cy="29" r="4"/><circle cx="72" cy="53" r="4"/><circle cx="51" cy="65" r="4"/><circle cx="30" cy="53" r="4"/><circle cx="93" cy="17" r="4"/><circle cx="110" cy="29" r="4"/></g>
+                <g fill="#84dfff" stroke="#84dfff"><circle cx="16" cy="21" r="3.5"/><circle cx="16" cy="61" r="3.5"/><circle cx="51" cy="7" r="3.5"/><circle cx="95" cy="7" r="3.5"/><circle cx="120" cy="24" r="3.5"/></g>
+              </svg>
+            </div>
+            <div class="mol-type">ALKALOID</div><h3>カフェイン</h3><div class="formula">C₈H₁₀N₄O₂</div>
+            <div class="mol-data"><span>MOLAR MASS</span><strong>194.19 g/mol</strong></div>
+          </article>
+          <article class="molecule-card reveal">
+            <div class="molecule-art" aria-hidden="true">
+              <svg viewBox="0 0 130 94" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M61 19 86 33 86 59 61 73 36 59 36 33Z M86 33 104 22 M86 59 103 68"/>
+                <path d="M61 27 78 37M78 55 61 65M44 55 44 37"/>
+                <path d="M104 22 115 28 M103 68 114 62"/>
+                <g fill="#091116"><circle cx="61" cy="19" r="3.7"/><circle cx="86" cy="33" r="3.7"/><circle cx="86" cy="59" r="3.7"/><circle cx="61" cy="73" r="3.7"/><circle cx="36" cy="59" r="3.7"/><circle cx="36" cy="33" r="3.7"/></g>
+                <g fill="#ffbe88" stroke="#ffbe88"><circle cx="115" cy="28" r="3.7"/><circle cx="114" cy="62" r="3.7"/><circle cx="104" cy="22" r="3.7"/><circle cx="103" cy="68" r="3.7"/></g>
+              </svg>
+            </div>
+            <div class="mol-type">AROMATIC ACID</div><h3>アスピリン</h3><div class="formula">C₉H₈O₄</div>
+            <div class="mol-data"><span>MOLAR MASS</span><strong>180.16 g/mol</strong></div>
+          </article>
+          <article class="molecule-card reveal">
+            <div class="molecule-art" aria-hidden="true">
+              <svg viewBox="0 0 130 94" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M63 18 87 31 87 57 63 71 39 57 39 31Z M63 18 63 4 M87 31 105 21 118 30 M39 57 24 67"/>
+                <path d="M63 28 80 37M80 53 63 63"/>
+                <g fill="#091116"><circle cx="63" cy="18" r="3.7"/><circle cx="87" cy="31" r="3.7"/><circle cx="87" cy="57" r="3.7"/><circle cx="63" cy="71" r="3.7"/><circle cx="39" cy="57" r="3.7"/><circle cx="39" cy="31" r="3.7"/></g>
+                <g fill="#d2afff" stroke="#d2afff"><circle cx="63" cy="4" r="3.7"/><circle cx="105" cy="21" r="3.7"/><circle cx="118" cy="30" r="3.7"/><circle cx="24" cy="67" r="3.7"/></g>
+              </svg>
+            </div>
+            <div class="mol-type">TERPENE</div><h3>リモネン</h3><div class="formula">C₁₀H₁₆</div>
+            <div class="mol-data"><span>MOLAR MASS</span><strong>136.24 g/mol</strong></div>
+          </article>
+        </div>
+        <p style="margin:17px 0 0;color:#718986;font-size:10px;line-height:1.9;">※ 分子カードの図はコンセプト表示用の簡略イラストです。正式な構造式の描画・分子データ連携は、エディタ実装時に整備します。</p>
+      </div>
+    </section>
+
+    <section class="lab-cta" id="roadmap">
+      <div class="shell">
+        <div class="lab-panel reveal">
+          <div>
+            <div class="eyebrow">NEXT STEP / ROADMAP</div>
+            <h2>研究室は、ここから始まる。</h2>
+            <p>まずはサイトの入口と世界観を整えました。次は分子名からの構造取得、手描き構造式エディタ、3Dブレード化、そして衝突シミュレーションへ。見た目だけの化学で終わらせない。</p>
+          </div>
+          <div class="lab-actions">
+            <a class="button" href="#molecules">分子の候補を見る <span class="arrow">↗</span></a>
+            <a class="button secondary" href="https://github.com/lambx-1205/chemistry_brade" target="_blank" rel="noreferrer">GitHub リポジトリ <span class="arrow">↗</span></a>
+            <div class="coming-note">MOLECULE EDITOR / COMING NEXT</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell footer-inner">
+      <span class="footer-brand">CHEMISTRY BRADE <span style="color:#6c8782">/ LAB 00</span></span>
+      <span>MOLECULES. SPIN. COLLIDE.</span>
+      <a href="#top">BACK TO TOP ↑</a>
+    </div>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    (function () {
+      var menuButton = document.getElementById('menu-toggle');
+      var navLinks = document.getElementById('nav-links');
+      menuButton.addEventListener('click', function () {
+        var isOpen = navLinks.classList.toggle('open');
+        menuButton.setAttribute('aria-expanded', String(isOpen));
+        menuButton.setAttribute('aria-label', isOpen ? 'メニューを閉じる' : 'メニューを開く');
+        menuButton.textContent = isOpen ? '×' : '☰';
+      });
+      navLinks.querySelectorAll('a').forEach(function (link) {
+        link.addEventListener('click', function () {
+          navLinks.classList.remove('open');
+          menuButton.setAttribute('aria-expanded', 'false');
+          menuButton.setAttribute('aria-label', 'メニューを開く');
+          menuButton.textContent = '☰';
+        });
+      });
+
+      var revealItems = document.querySelectorAll('.reveal');
+      if ('IntersectionObserver' in window) {
+        var observer = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('visible');
+              observer.unobserve(entry.target);
+            }
+          });
+        }, { threshold: 0.12 });
+        revealItems.forEach(function (item) { observer.observe(item); });
+      } else {
+        revealItems.forEach(function (item) { item.classList.add('visible'); });
+      }
+
+      var canvas = document.getElementById('molecule-scene');
+      var fallback = document.getElementById('scene-fallback');
+      if (!window.THREE || !canvas) {
+        if (fallback) fallback.style.display = 'grid';
+        return;
+      }
+
+      try {
+        var THREE = window.THREE;
+        var scene = new THREE.Scene();
+        var camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+        camera.position.set(0, 4.15, 7.6);
+        camera.lookAt(0, -0.05, 0);
+        var renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.8));
+        renderer.setClearColor(0x000000, 0);
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        scene.add(new THREE.AmbientLight(0xa0d8d0, 1.1));
+        var keyLight = new THREE.DirectionalLight(0xd8fff0, 2.2);
+        keyLight.position.set(-3, 7, 4);
+        keyLight.castShadow = true;
+        scene.add(keyLight);
+        var rimLight = new THREE.PointLight(0x51d9d0, 1.7, 15);
+        rimLight.position.set(3, 2.7, -3);
+        scene.add(rimLight);
+        var warmLight = new THREE.PointLight(0xffc797, 0.5, 12);
+        warmLight.position.set(-4, 1, 2);
+        scene.add(warmLight);
+
+        var floor = new THREE.Mesh(
+          new THREE.CircleGeometry(5.5, 96),
+          new THREE.MeshStandardMaterial({ color: 0x102126, metalness: 0.6, roughness: 0.42, side: THREE.DoubleSide })
+        );
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.y = -0.77;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        function addArenaRing(radius, tube, color, y, opacity) {
+          var mesh = new THREE.Mesh(
+            new THREE.TorusGeometry(radius, tube, 8, 128),
+            new THREE.MeshStandardMaterial({ color: color, metalness: 0.65, roughness: 0.32, transparent: opacity < 1, opacity: opacity, emissive: color, emissiveIntensity: 0.18 })
+          );
+          mesh.rotation.x = Math.PI / 2;
+          mesh.position.y = y;
+          scene.add(mesh);
+          return mesh;
+        }
+        addArenaRing(4.35, 0.08, 0x274c4b, -0.66, 1);
+        addArenaRing(3.65, 0.018, 0x5ab9a6, -0.735, 0.75);
+        addArenaRing(2.65, 0.012, 0x2b7770, -0.73, 0.65);
+        addArenaRing(1.52, 0.012, 0x2a7770, -0.72, 0.55);
+
+        var molecule = new THREE.Group();
+        molecule.position.y = 0.17;
+        scene.add(molecule);
+        var carbonMat = new THREE.MeshStandardMaterial({ color: 0x355f5d, metalness: 0.48, roughness: 0.25, emissive: 0x102d2b, emissiveIntensity: 0.7 });
+        var hydrogenMat = new THREE.MeshStandardMaterial({ color: 0xe2f3ec, metalness: 0.22, roughness: 0.2 });
+        var bondMat = new THREE.MeshStandardMaterial({ color: 0x8ae2d0, metalness: 0.55, roughness: 0.24, emissive: 0x22564d, emissiveIntensity: 0.38 });
+        var doubleBondMat = new THREE.MeshStandardMaterial({ color: 0x6ce7e4, metalness: 0.38, roughness: 0.2, emissive: 0x287e7b, emissiveIntensity: 0.55 });
+
+        function addSphere(parent, position, radius, material) {
+          var mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 24, 18), material);
+          mesh.position.copy(position);
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          parent.add(mesh);
+          return mesh;
+        }
+        function addBond(parent, a, b, radius, material) {
+          var direction = new THREE.Vector3().subVectors(b, a);
+          var length = direction.length();
+          var mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, 12), material);
+          mesh.position.copy(a).add(b).multiplyScalar(0.5);
+          mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+          mesh.castShadow = true;
+          parent.add(mesh);
+          return mesh;
+        }
+        var carbons = [];
+        var ringRadius = 1.28;
+        var yLevel = 0.18;
+        for (var i = 0; i < 6; i++) {
+          var angle = i * Math.PI / 3 + Math.PI / 6;
+          carbons.push(new THREE.Vector3(Math.cos(angle) * ringRadius, yLevel, Math.sin(angle) * ringRadius));
+        }
+        for (var j = 0; j < 6; j++) {
+          var next = (j + 1) % 6;
+          addBond(molecule, carbons[j], carbons[next], 0.075, bondMat);
+          if (j % 2 === 0) {
+            var innerA = carbons[j].clone().multiplyScalar(0.79);
+            var innerB = carbons[next].clone().multiplyScalar(0.79);
+            innerA.y = yLevel + 0.015;
+            innerB.y = yLevel + 0.015;
+            addBond(molecule, innerA, innerB, 0.032, doubleBondMat);
+          }
+        }
+        carbons.forEach(function (position) {
+          addSphere(molecule, position, 0.19, carbonMat);
+          var radial = new THREE.Vector3(position.x, 0, position.z).normalize();
+          var hydrogenPosition = position.clone().add(radial.multiplyScalar(0.65));
+          hydrogenPosition.y = yLevel + 0.01;
+          addBond(molecule, position.clone().add(radial.clone().multiplyScalar(-0.12)), hydrogenPosition, 0.036, bondMat);
+          addSphere(molecule, hydrogenPosition, 0.105, hydrogenMat);
+        });
+
+        var glowRing = new THREE.Mesh(
+          new THREE.TorusGeometry(2.2, 0.012, 6, 100),
+          new THREE.MeshBasicMaterial({ color: 0x67eee0, transparent: true, opacity: 0.55 })
+        );
+        glowRing.rotation.x = Math.PI / 2;
+        glowRing.position.y = 0.2;
+        molecule.add(glowRing);
+
+        var particleGroup = new THREE.Group();
+        scene.add(particleGroup);
+        for (var p = 0; p < 24; p++) {
+          var a = p * Math.PI * 2 / 24;
+          var r = 2.0 + (p % 4) * 0.16;
+          var dot = new THREE.Mesh(
+            new THREE.SphereGeometry(p % 5 === 0 ? 0.035 : 0.018, 8, 8),
+            new THREE.MeshBasicMaterial({ color: p % 3 === 0 ? 0xffc797 : 0x7cf8d4, transparent: true, opacity: 0.8 })
+          );
+          dot.position.set(Math.cos(a) * r, 0.28 + Math.sin(p * 1.3) * 0.3, Math.sin(a) * r);
+          particleGroup.add(dot);
+        }
+
+        function resize() {
+          var width = canvas.clientWidth || canvas.parentElement.clientWidth;
+          var height = canvas.clientHeight || canvas.parentElement.clientHeight;
+          if (!width || !height) return;
+          renderer.setSize(width, height, false);
+          camera.aspect = width / height;
+          camera.position.z = width < 480 ? 8.8 : 7.6;
+          camera.position.y = width < 480 ? 4.5 : 4.15;
+          camera.updateProjectionMatrix();
+        }
+        if ('ResizeObserver' in window) {
+          new ResizeObserver(resize).observe(canvas.parentElement);
+        } else {
+          window.addEventListener('resize', resize);
+        }
+        resize();
+        if (fallback) fallback.style.display = 'none';
+
+        var reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        var frame = 0;
+        function animate() {
+          requestAnimationFrame(animate);
+          frame += 1;
+          if (!reducedMotion) {
+            molecule.rotation.y += 0.0065;
+            molecule.rotation.x = 0.09 + Math.sin(frame * 0.008) * 0.025;
+            molecule.position.y = 0.16 + Math.sin(frame * 0.018) * 0.045;
+            particleGroup.rotation.y -= 0.0014;
+          }
+          renderer.render(scene, camera);
+        }
+        animate();
+      } catch (error) {
+        canvas.style.display = 'none';
+        if (fallback) fallback.style.display = 'grid';
+      }
+    })();
+  </script>
+</body>
+</html>
