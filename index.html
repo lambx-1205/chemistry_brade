@@ -267,6 +267,11 @@
       registerJapaneseName("proline", ["プロリン"]);
 
       function hideSuggestions() {
+        if (autocompleteTimer) {
+          clearTimeout(autocompleteTimer);
+          autocompleteTimer = null;
+        }
+        autocompleteRequestId += 1;
         suggestionList.hidden = true;
         suggestionList.replaceChildren();
         nameInput.setAttribute("aria-expanded", "false");
@@ -445,7 +450,7 @@
           updateActiveSuggestion();
         } else if (event.key === "Enter" && activeSuggestionIndex >= 0) {
           event.preventDefault();
-          chooseSuggestion(visibleSuggestions[activeSuggestionIndex]);
+          selectSuggestion(visibleSuggestions[activeSuggestionIndex]);
         } else if (event.key === "Escape") {
           hideSuggestions();
         }
@@ -567,13 +572,23 @@
             if (lastLookupError instanceof TypeError) {
               throw lastLookupError;
             }
-            if (/[ぁ-ゖァ-ヺ一-龯ｦ-ﾟ]/.test(query)) {
-              if (alias) {
-                throw new Error("「" + query + "」と英語別名「" + alias + "」の両方でPubChemに一致する分子が見つかりませんでした。別の名称を試してください。");
-              }
-              throw new Error("この日本語名は、現時点の日本語別名辞書に登録されていません。英語名またはIUPAC名でも検索できます。");
+
+            // 完全一致でCIDが見つからなければ、公式のライブ候補APIを使って代替表記を提示する。
+            let liveMatches = [];
+            try {
+              liveMatches = await getOnlineSuggestions(query);
+            } catch (suggestionError) {
+              // 候補APIが失敗しても、下で通常の検索エラーを案内する。
             }
-            throw lastLookupError || new Error("PubChemに一致する分子が見つかりませんでした。英語名や別名でも検索してください。");
+            if (requestId !== latestRequest) return;
+
+            if (liveMatches.length > 0) {
+              renderSuggestions(liveMatches, true);
+              setStatus("完全一致する構造データが見つかりませんでした。PubChemの候補を選ぶか、別の表記をお試しください。", false);
+              return;
+            }
+
+            throw new Error("PubChemで化合物を特定できませんでした。この表記は登録されていない可能性があります。英語名・IUPAC名など別の名称でもお試しください。");
           }
 
           currentMatchedTerm = matchedTerm;
